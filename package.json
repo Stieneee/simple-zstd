@@ -1,0 +1,37 @@
+{
+  "name": "simple-zstd",
+  "version": "0.0.0",
+  "description": "Node.js interface to the system installed zstd.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Stieneee/simple-zstd.git"
+  },
+  "keywords": [
+    "zstd",
+    "zstandard",
+    "compress",
+    "compression",
+    "decompress",
+    "decompression",
+    "stream",
+    "pipe"
+  ],
+  "author": "Tyler Stiene <tystiene@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Stieneee/simple-zstd/issues"
+  },
+  "homepage": "https://github.com/Stieneee/simple-zstd#readme",
+  "devDependencies": {
+    "eslint": "^5.16.0",
+    "eslint-config-airbnb-base": "^13.1.0",
+    "eslint-plugin-import": "^2.17.3"
+  },
+  "dependencies": {
+    "duplex-child-process": "^1.0.0"
+  }
+}

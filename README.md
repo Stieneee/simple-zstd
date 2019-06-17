@@ -1,5 +1,9 @@
 # simple-zstd
 
+[![Build Status](https://travis-ci.org/Stieneee/simple-zstd.svg?branch=master)](https://travis-ci.org/Stieneee/simple-zstd)
+[![Package Size Size](https://badgen.net/badge/packagephobia/install/simple-zstd)](https://packagephobia.now.sh/result?p=simple-zstd)
+[![License](https://badgen.net/badge/license/MIT/blue)](https://choosealicense.com/licenses/mit/)
+
 Node.js interface to system installed zstandard (zstd).
 
 ## Why Another ZSTD Package

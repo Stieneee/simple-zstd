@@ -8,7 +8,7 @@ Node.js interface to system installed zstandard (zstd).
 
 ## Why Another ZSTD Package
 
-Other packages where either using out-of-date ZSTD versions or depended native C bindings that required a compilation step during installation.
+Other packages were either using out-of-date ZSTD versions or depended on native C bindings that required a compilation step during installation.
 A package was needed that would cleanly work with [pkg](https://www.npmjs.com/package/pkg).
 
 ## Dependencies
@@ -25,7 +25,7 @@ Example:
 
 ## Usage
 
-simple-zstd exposes stream interfaces for compression and decompression.
+simple-zstd exposes a stream interfaces for compression and decompression.
 
 ```javascript
 const fs = require('fs');

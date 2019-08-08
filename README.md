@@ -39,11 +39,37 @@ fs.createReadStream('example.txt')
   .pipe(ZSTDDecompress())
   .pipe(fs.createWriteStream('example_copy.txt'))
   .on('error', (err) => {
-    console.log(err);
+    //..
   })
   .on('finish', () => {
     console.log('Copy Complete!');
   })
+
+  // -> Copy Complete
+```
+
+### Decompress Maybe
+
+A maybe variant of decompress will pass-through a non-zst stream while decompressing a zst stream.
+
+```javascript
+const fs = require('fs');
+const {ZSTDDecompressMaybe} = require('zstd');
+
+// ZSTDDecompressMaybe(streamOptions)
+
+fs.createReadStream('example.txt')
+  // .pipe(ZSTDCompress(3))
+  .pipe(ZSTDDecompressMaybe())
+  .pipe(fs.createWriteStream('example_copy.txt'))
+  .on('error', (err) => {
+    //..
+  })
+  .on('finish', () => {
+    console.log('Copy Complete!');
+  })
+
+  // -> Copy Complete
 ```
 
 ## Contributing

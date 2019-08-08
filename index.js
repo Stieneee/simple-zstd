@@ -2,6 +2,9 @@
 const { spawn } = require('duplex-child-process');
 const { execSync } = require('child_process');
 const fs = require('fs');
+const isZst = require('is-zst');
+const peek = require('peek-stream');
+const through = require('through2');
 
 const find = (process.platform === 'win32') ? 'where zstd.exe' : 'which zstd';
 
@@ -29,4 +32,11 @@ exports.ZSTDCompress = function compress(compLevel, spawnOptions, streamOptions)
 
 exports.ZSTDDecompress = function decompress(spawnOptions, streamOptions) {
   return spawn(bin, ['-d'], spawnOptions, streamOptions);
+};
+
+exports.ZSTDDecompressMaybe = function decompressMaybe(spawnOptions, streamOptions) {
+  return peek({ newline: false, maxBuffer: 10 }, (data, swap) => {
+    if (isZst(data)) return swap(null, exports.ZSTDDecompress(spawnOptions, streamOptions));
+    return swap(null, through());
+  });
 };

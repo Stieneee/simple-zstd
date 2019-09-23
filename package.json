@@ -31,10 +31,10 @@
   },
   "homepage": "https://github.com/Stieneee/simple-zstd#readme",
   "devDependencies": {
-    "eslint": "^6.1.0",
-    "eslint-config-airbnb-base": "^13.2.0",
+    "eslint": "^6.4.0",
+    "eslint-config-airbnb-base": "^14.0.0",
     "eslint-plugin-import": "^2.18.2",
-    "release-it": "^12.3.5"
+    "release-it": "^12.4.1"
   },
   "dependencies": {
     "duplex-child-process": "^1.0.0",

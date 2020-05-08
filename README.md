@@ -39,7 +39,7 @@ stream = ZSTDDecompressMaybe()
 
 ```javascript
 const fs = require('fs');
-const {ZSTDCompress, ZSTDDecompress} = require('zstd');
+const {ZSTDCompress, ZSTDDecompress} = require('simple-zstd');
 
 // ZSTDCompress(compressionLevel, streamOptions)
 // ZSTDDecompress(streamOptions)
@@ -64,7 +64,7 @@ A maybe variant of decompress will pass-through a non-zst stream while decompres
 
 ```javascript
 const fs = require('fs');
-const {ZSTDDecompressMaybe} = require('zstd');
+const {ZSTDDecompressMaybe} = require('simple-zstd');
 
 // ZSTDDecompressMaybe(streamOptions)
 

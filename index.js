@@ -1,4 +1,4 @@
-const { spawn } = require('duplex-child-process');
+const ProcessStream = require('process-streams');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const isZst = require('is-zst');
@@ -22,15 +22,17 @@ try {
 }
 
 exports.ZSTDCompress = function compress(compLevel, spawnOptions, streamOptions) {
+  const ps = new ProcessStream();
   let lvl = compLevel;
   if (!lvl) lvl = 3;
   if (lvl < 1 || lvl > 22) lvl = 3;
 
-  return spawn(bin, [`-${lvl}`], spawnOptions, streamOptions);
+  return ps.spawn(bin, [`-${lvl}`], spawnOptions, streamOptions);
 };
 
 exports.ZSTDDecompress = function decompress(spawnOptions, streamOptions) {
-  return spawn(bin, ['-d'], spawnOptions, streamOptions);
+  const ps = new ProcessStream();
+  return ps.spawn(bin, ['-d'], spawnOptions, streamOptions);
 };
 
 exports.ZSTDDecompressMaybe = function decompressMaybe(spawnOptions, streamOptions) {

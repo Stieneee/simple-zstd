@@ -4,7 +4,7 @@
   "description": "Node.js interface to the system installed zstd.",
   "main": "index.js",
   "scripts": {
-    "test": "node test/test.js"
+    "test": "mocha"
   },
   "repository": {
     "type": "git",
@@ -31,9 +31,13 @@
   },
   "homepage": "https://github.com/Stieneee/simple-zstd#readme",
   "devDependencies": {
-    "eslint": "^6.4.0",
-    "eslint-config-airbnb-base": "^14.0.0",
-    "eslint-plugin-import": "^2.18.2",
+    "brake": "^1.0.1",
+    "chai": "^4.2.0",
+    "chai-fs": "^2.0.0",
+    "eslint": "^6.8.0",
+    "eslint-config-airbnb-base": "^14.1.0",
+    "eslint-plugin-import": "^2.20.2",
+    "mocha": "^7.1.2",
     "release-it": "^12.4.1"
   },
   "dependencies": {

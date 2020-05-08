@@ -1,4 +1,3 @@
-
 const { spawn } = require('duplex-child-process');
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -13,14 +12,12 @@ let bin;
 try {
   bin = execSync(find, { env: process.env }).toString().replace(/\n$/, '');
 } catch (err) {
-  console.error('Can not access zstd! Is it installed?');
   throw new Error('Can not access zstd! Is it installed?');
 }
 
 try {
   fs.accessSync(bin, fs.constants.X_OK);
 } catch (err) {
-  console.error('zstd is not executable');
   throw new Error('zstd is not executable');
 }
 

@@ -24,7 +24,19 @@
     "maybe",
     "decompress-maybe"
   ],
-  "author": "Tyler Stiene <tystiene@gmail.com>",
+  "author": {
+    "name": "Tyler Stiene",
+    "email": "tystiene@gmail.com",
+    "url": "https://tylerstiene.ca"
+  },
+
+  "contributors": [
+    {
+      "name": "Joshua Barkovic",
+      "email": "joshbarkovic@gmail.com",
+      "url": "https://github.com/jbarkovic"
+    }
+  ],
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/Stieneee/simple-zstd/issues"

@@ -30,14 +30,14 @@ exports.ZSTDCompress = function compress(compLevel, spawnOptions, streamOptions)
   return ps.spawn(bin, [`-${lvl}`], spawnOptions, streamOptions);
 };
 
-exports.ZSTDDecompress = function decompress(spawnOptions, streamOptions) {
+exports.ZSTDDecompress = function decompress(spawnOptions, streamOptions, zstdOptions = []) {
   const ps = new ProcessStream();
-  return ps.spawn(bin, ['-d'], spawnOptions, streamOptions);
+  return ps.spawn(bin, ['-d', ...zstdOptions], spawnOptions, streamOptions);
 };
 
-exports.ZSTDDecompressMaybe = function decompressMaybe(spawnOptions, streamOptions) {
+exports.ZSTDDecompressMaybe = function decompressMaybe(spawnOptions, streamOptions, zstdOptions = []) {
   return peek({ newline: false, maxBuffer: 10 }, (data, swap) => {
-    if (isZst(data)) return swap(null, exports.ZSTDDecompress(spawnOptions, streamOptions));
+    if (isZst(data)) return swap(null, exports.ZSTDDecompress(spawnOptions, streamOptions, zstdOptions));
     return swap(null, through());
   });
 };

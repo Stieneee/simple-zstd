@@ -21,13 +21,36 @@ try {
   throw new Error('zstd is not executable');
 }
 
-exports.ZSTDCompress = function compress(compLevel, spawnOptions, streamOptions) {
+// const cX = 0;
+
+exports.ZSTDCompress = function compress(compLevel, spawnOptions, streamOptions, zstdOptions = []) {
+  // const x = cX;
+  // cX += 1;
   const ps = new ProcessStream();
   let lvl = compLevel;
   if (!lvl) lvl = 3;
   if (lvl < 1 || lvl > 22) lvl = 3;
 
-  return ps.spawn(bin, [`-${lvl}`], spawnOptions, streamOptions);
+  const c = ps.spawn(bin, [`-${lvl}`, ...zstdOptions], spawnOptions, streamOptions)
+    .on('exit', (code, signal) => {
+      // console.log(x, 'exit', code, signal);
+      if (code !== 0) {
+        setTimeout(() => {
+          c.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
+        }, 1);
+      }
+    });
+    // .on('end', () => {
+    //   console.log(x, 'end');
+    // })
+    // .on('close', () => {
+    //   console.log(x, 'close');
+    // })
+    // .on('destroy', () => {
+    //   console.log(x, 'destroy');
+    // });
+
+  return c;
 };
 
 exports.ZSTDDecompress = function decompress(spawnOptions, streamOptions, zstdOptions = []) {

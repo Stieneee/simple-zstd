@@ -66,7 +66,7 @@ A maybe variant of decompress will pass-through a non-zst stream while decompres
 const fs = require('fs');
 const {ZSTDDecompressMaybe} = require('simple-zstd');
 
-// ZSTDDecompressMaybe(streamOptions)
+// ZSTDDecompressMaybe(spawnOptions, streamOptions, zstdOptions)
 
 fs.createReadStream('example.txt')
   // .pipe(ZSTDCompress(3))

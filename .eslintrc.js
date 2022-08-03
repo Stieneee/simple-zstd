@@ -9,10 +9,11 @@ module.exports = {
     SharedArrayBuffer: 'readonly',
   },
   parserOptions: {
-    ecmaVersion: 2018,
+    ecmaVersion: 'latest',
     sourceType: 'module',
   },
   rules: {
     'max-len': 'off',
+    'no-underscore-dangle': 'off',
   },
 };

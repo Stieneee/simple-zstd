@@ -6,14 +6,26 @@
 
 Node.js interface to system installed zstandard (zstd).
 
-## Why Another ZSTD Package
+## "Simple"-ZSTD
 
-Other packages were either using out-of-date ZSTD versions or depended on native C bindings that required a compilation step during installation.
-A package was needed that would cleanly work with [pkg](https://www.npmjs.com/package/pkg).
+The package name is inspired by another package simple-git.
+In summary the package like simple-git attempts to provide a lightwieght wrapper around the system installed ZSTD.
+This provides a more stable package in comparison to a package that builds against a library at the cost of having to manage child process.
+
+A few additional features have made there into version 2 including a class that will attempt to pre-start child processes before they are need for the most latenacy concerned applications
+
+Regardless of whether you are performing a compression or decompression or using a stream or buffer interface this package will spawn an instance of zstd to handle the action.
+When the action is completed the child process will be killed.
+A dicitionary parameter supports both buffer and path definintons.
+If you provide the dictionary as a buffer this package will create a tmp file using the tmp (tmp-promise) package.
+
+Finally both decompressiong methods provide a decomporess-maybe functionality.
+If a buffer or stream is passed that is not a zstd compressed byte stream the byte stream is not altered.
 
 ## Dependencies
 
-ZSTD
+ZSTD must be installed on the system.
+It will work in both Linux and Windows environments assuming the zstd(.exe) can be found on the path.
 
 Example:
 
@@ -25,15 +37,27 @@ Example:
 
 ## Usage
 
-simple-zstd exposes a stream interfaces for compression and decompression.
-The underlying child process is destroyed with the stream.
+The static functions provide the most basic interface for usage
 
-stream = ZSTDCompress(lvl)
-lvl - ZSTD compression level
+```javascript
+const {compress, decompress, compressBuffer, decompressBuffer} = require('../index');
 
-stream = ZSTDDecompress()
+compLevel = 3; // ZSTD Compression Level
+spawnOptions = {} // node:stream spawnOptions object - adjust the spwan options of the ZSTD process
+streamOptions = {} // 
+zstdOptions = [] // Array of Options to pass to the zstd process e.g. ['--ultra']
+dictionary = Buffer || {path} // Supply an optional dictionary buffer or path to dictionary file
 
-stream = ZSTDDecompressMaybe()
+// Static Functions
+function compress(compLevel, spawnOptions, streamOptions, zstdOptions, dictionary)
+function compressBuffer(buffer, compLevel, spawnOptions, streamOptions, zstdOptions, dictionary)
+function decompress(spawnOptions, streamOptions, zstdOptions, dictionary)
+function decompressBuffer(buffer, spawnOptions, streamOptions, zstdOptions, dictionary)
+```
+
+The SimpleZSTD class allows an the settings to be preset for a pool of child process.
+The function names are the same on the class however the options are now set an instacne of the class is created.
+
 
 ### Example
 
@@ -47,30 +71,6 @@ const {ZSTDCompress, ZSTDDecompress} = require('simple-zstd');
 fs.createReadStream('example.txt')
   .pipe(ZSTDCompress(3))
   .pipe(ZSTDDecompress())
-  .pipe(fs.createWriteStream('example_copy.txt'))
-  .on('error', (err) => {
-    //..
-  })
-  .on('finish', () => {
-    console.log('Copy Complete!');
-  })
-
-  // -> Copy Complete
-```
-
-### Decompress Maybe
-
-A maybe variant of decompress will pass-through a non-zst stream while decompressing a zst stream.
-
-```javascript
-const fs = require('fs');
-const {ZSTDDecompressMaybe} = require('simple-zstd');
-
-// ZSTDDecompressMaybe(spawnOptions, streamOptions, zstdOptions)
-
-fs.createReadStream('example.txt')
-  // .pipe(ZSTDCompress(3))
-  .pipe(ZSTDDecompressMaybe())
   .pipe(fs.createWriteStream('example_copy.txt'))
   .on('error', (err) => {
     //..

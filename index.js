@@ -38,16 +38,17 @@ async function CreateCompressStream(compLevel, spawnOptions, streamOptions, zstd
 
   let lvl = compLevel;
   let opts = zstdOptions || [];
+  let path = null;
+  let cleanup = null;
+
   if (!lvl) lvl = 3;
   if (lvl < 1 || lvl > 22) lvl = 3;
 
   // Dictionary
-  let dCleanup = null;
   if (dictionary && dictionary.path) {
     opts = [...opts, '-D', `${dictionary.path}`]; //eslint-disable-line
   } else if (Buffer.isBuffer(dictionary)) {
-    const { path, cleanup } = await file();
-    dCleanup = cleanup;
+    ({ path, cleanup } = await file());
     await writeFile(path, dictionary);
     opts = [...opts, '-D', `${path}`]; //eslint-disable-line
   }
@@ -59,7 +60,7 @@ async function CreateCompressStream(compLevel, spawnOptions, streamOptions, zstd
     c = ps.spawn(bin, [`-${lvl}`, ...opts], spawnOptions, streamOptions);
   } catch (err) {
     // cleanup if error;
-    if (dCleanup) dCleanup();
+    if (cleanup) cleanup();
     throw err;
   }
 
@@ -70,7 +71,7 @@ async function CreateCompressStream(compLevel, spawnOptions, streamOptions, zstd
         c.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
       }, 1);
     }
-    if (dCleanup) dCleanup();
+    if (cleanup) cleanup();
   });
 
   return c;
@@ -95,12 +96,13 @@ async function CreateDecompressStream(spawnOptions, streamOptions, zstdOptions, 
   const ps = new ProcessStream();
 
   let opts = zstdOptions || [];
-  let dCleanup = null;
+  let path = null;
+  let cleanup = null;
+
   if (dictionary && dictionary.path) {
     opts = [...opts, '-D', `${dictionary.path}`]; //eslint-disable-line
   } else if (Buffer.isBuffer(dictionary)) {
-    const { path, cleanup } = await file();
-    dCleanup = cleanup;
+    ({ path, cleanup } = await file());
     await writeFile(path, dictionary);
     opts = [...opts, '-D', `${path}`]; //eslint-disable-line
   }
@@ -112,7 +114,7 @@ async function CreateDecompressStream(spawnOptions, streamOptions, zstdOptions, 
     d = ps.spawn(bin, ['-d', ...opts], spawnOptions, streamOptions);
   } catch (err) {
     // cleanup if error
-    if (dCleanup) dCleanup();
+    if (cleanup) cleanup();
     throw err;
   }
 
@@ -123,7 +125,7 @@ async function CreateDecompressStream(spawnOptions, streamOptions, zstdOptions, 
         d.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
       }, 1);
     }
-    if (dCleanup) dCleanup();
+    if (cleanup) cleanup();
   });
 
   return peek({ newline: false, maxBuffer: 10 }, (data, swap) => {
@@ -187,7 +189,11 @@ class SimpleZSTD {
       let cleanup = null;
 
       try {
-        if (dictionary) {
+        // Convert buffer or dictionary.path to path
+        if (dictionary && dictionary.path) {
+          path = dictionary.path;
+        }
+        if (dictionary && Buffer.isBuffer(dictionary)) {
           ({ path, cleanup } = await file());
           this.#bufferFileCleanup = cleanup;
           await writeFile(path, dictionary);
@@ -197,7 +203,7 @@ class SimpleZSTD {
           poolOpts.compressQueueSize,
           (() => {
             debug('compress factory');
-            return CreateDecompressStream(compLevel, spawnOptions, streamOptions, zstdOptions, { path });
+            return CreateCompressStream(compLevel, spawnOptions, streamOptions, zstdOptions, { path });
           }),
           async (p) => {
             debug('compress cleanup');
@@ -209,7 +215,7 @@ class SimpleZSTD {
           poolOpts.decompressQueueSize,
           (() => {
             debug('decompress factory');
-            return CreateDecompressStream(compLevel, spawnOptions, streamOptions, zstdOptions, { path });
+            return CreateDecompressStream(spawnOptions, streamOptions, zstdOptions, { path });
           }),
           async (p) => {
             debug('decompress cleanup');
@@ -220,12 +226,12 @@ class SimpleZSTD {
         debug('READY');
         resolve();
       } catch (err) {
-        if (cleanup) cleanup();
         reject(err);
       }
     }).catch((err) => {
       debug('ready error', err);
-      this.cleanup();
+      if (this.#bufferFileCleanup) this.#bufferFileCleanup();
+      this.#bufferFileCleanup = null;
     });
   }
 
@@ -233,6 +239,7 @@ class SimpleZSTD {
     this.#compressOven.destroy();
     this.#decompressOven.destroy();
     if (this.#bufferFileCleanup) this.#bufferFileCleanup();
+    this.#bufferFileCleanup = null;
   }
 
   async compress() {

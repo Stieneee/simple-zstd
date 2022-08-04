@@ -188,7 +188,7 @@ describe('Test the Oven', () => {
 
 });
 
-describe.only('Test simple-zstd Class', () => {
+describe('Test simple-zstd Class', () => {
   it('should behave as the static function', async () => {
     const i = new SimpleZSTD();
 
@@ -240,5 +240,53 @@ describe.only('Test simple-zstd Class', () => {
           }
         });
     });
+  });
+
+  it('should accept a bigger buffer', async () => {
+    const buffer = fs.readFileSync(src);
+
+    const i = new SimpleZSTD({
+      compressQueueSize: { targetSize: 1 },
+      decompressQueueSize: { targetSize: 1 },
+    }, 3);
+
+    await sleepAsync(1000);
+
+    const compressed = await i.compressBuffer(buffer);
+    const decompressed = await i.decompressBuffer(compressed);
+
+    i.destroy();
+    assert.deepEqual(buffer, decompressed);
+  });
+
+  it('should accept a dictionary file as a buffer', async () => {
+    const buffer = fs.readFileSync(src);
+    const dictBuffer = fs.readFileSync(dictionary);
+
+    const i = new SimpleZSTD({
+      compressQueueSize: { targetSize: 1 },
+      decompressQueueSize: { targetSize: 1 },
+    }, 3, {}, {}, [], dictBuffer);
+
+    const compressed = await i.compressBuffer(buffer);
+    const decompressed = await i.decompressBuffer(compressed);
+
+    i.destroy();
+    assert.deepEqual(buffer, decompressed);
+  });
+
+  it('should accept a dictionary file as a path', async () => {
+    const buffer = fs.readFileSync(src);
+
+    const i = new SimpleZSTD({
+      compressQueueSize: { targetSize: 1 },
+      decompressQueueSize: { targetSize: 1 },
+    }, 3, {}, {}, [], { path: dictionary });
+
+    const compressed = await i.compressBuffer(buffer);
+    const decompressed = await i.decompressBuffer(compressed);
+
+    i.destroy();
+    assert.deepEqual(buffer, decompressed);
   });
 });

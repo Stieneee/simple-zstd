@@ -1,6 +1,6 @@
-const debug = require('debug')('SimpleZSTDOven');
+const debug = require('debug')('SimpleZSTDQueue');
 
-class Oven {
+class ProcessQueue {
   #poolOptions;
 
   #queue;
@@ -9,12 +9,15 @@ class Oven {
 
   #destroy;
 
+  #isDestroyed;
+
   constructor(poolOptions, factory, destroy) {
     debug('constructor', poolOptions);
     this.#poolOptions = poolOptions || {};
     this.#queue = [];
     this.#factory = factory;
     this.#destroy = destroy;
+    this.#isDestroyed = false;
 
     for (let i = 0; i < this.#poolOptions.targetSize || 0; i += 1) {
       this.#createResource();
@@ -44,10 +47,11 @@ class Oven {
 
   async destroy() {
     debug('destroy', this.#queue.length);
+    this.#isDestroyed = true;
     while (this.#queue.length > 0) {
       this.#destroy(this.#queue.pop());
     }
   }
 }
 
-module.exports = Oven;
+module.exports = ProcessQueue;

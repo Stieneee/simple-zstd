@@ -184,10 +184,6 @@ describe('Test simple-zstd Static Functions', () => {
   });
 });
 
-describe('Test the Oven', () => {
-
-});
-
 describe('Test simple-zstd Class', () => {
   it('should behave as the static function', async () => {
     const i = new SimpleZSTD();
@@ -213,10 +209,30 @@ describe('Test simple-zstd Class', () => {
     });
   });
 
+  it('should handle back pressure', async () => {
+    const i = new SimpleZSTD();
+
+    const c = await i.compress(3);
+    const d = await i.decompress();
+
+    await sleepAsync(1000);
+
+    await pipelineAsync(
+      fs.createReadStream(src),
+      c,
+      d,
+      brake(200000),
+      fs.createWriteStream(dst1),
+    );
+
+    i.destroy();
+    assert.fileEqual(src, dst1);
+  }).timeout(30000);
+
   it('should behave as the static function and pre create zstd child process', async () => {
     const i = new SimpleZSTD({
-      compressQueueSize: { targetSize: 1 },
-      decompressQueueSize: { targetSize: 1 },
+      compressQueue: { targetSize: 1 },
+      decompressQueue: { targetSize: 1 },
     });
 
     await sleepAsync(1000);
@@ -240,14 +256,14 @@ describe('Test simple-zstd Class', () => {
           }
         });
     });
-  });
+  }).timeout(30000);
 
   it('should accept a bigger buffer', async () => {
     const buffer = fs.readFileSync(src);
 
     const i = new SimpleZSTD({
-      compressQueueSize: { targetSize: 1 },
-      decompressQueueSize: { targetSize: 1 },
+      compressQueue: { targetSize: 1 },
+      decompressQueue: { targetSize: 1 },
     }, 3);
 
     await sleepAsync(1000);
@@ -264,8 +280,8 @@ describe('Test simple-zstd Class', () => {
     const dictBuffer = fs.readFileSync(dictionary);
 
     const i = new SimpleZSTD({
-      compressQueueSize: { targetSize: 1 },
-      decompressQueueSize: { targetSize: 1 },
+      compressQueue: { targetSize: 1 },
+      decompressQueue: { targetSize: 1 },
     }, 3, {}, {}, [], dictBuffer);
 
     const compressed = await i.compressBuffer(buffer);
@@ -279,9 +295,9 @@ describe('Test simple-zstd Class', () => {
     const buffer = fs.readFileSync(src);
 
     const i = new SimpleZSTD({
-      compressQueueSize: { targetSize: 1 },
-      decompressQueueSize: { targetSize: 1 },
-    }, 3, {}, {}, [], { path: dictionary });
+      compressQueue: { targetSize: 1, complevel: 3 },
+      decompressQueue: { targetSize: 1 },
+    }, { path: dictionary });
 
     const compressed = await i.compressBuffer(buffer);
     const decompressed = await i.decompressBuffer(compressed);

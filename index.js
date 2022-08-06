@@ -11,7 +11,7 @@ const through = require('through2');
 const { file } = require('tmp-promise');
 const debug = require('debug')('SimpleZSTD');
 
-const Oven = require('./oven');
+const ProcessQueue = require('./process-queue');
 const BufferWritable = require('./buffer-writable');
 
 const pipelineAsync = util.promisify(pipeline);
@@ -65,7 +65,7 @@ async function CreateCompressStream(compLevel, spawnOptions, streamOptions, zstd
   }
 
   c.on('exit', (code, signal) => {
-    debug('exit', code, signal);
+    debug('c exit', code, signal);
     if (code !== 0) {
       setTimeout(() => {
         c.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
@@ -99,6 +99,8 @@ async function CreateDecompressStream(spawnOptions, streamOptions, zstdOptions, 
   let path = null;
   let cleanup = null;
 
+  let terminate;
+
   if (dictionary && dictionary.path) {
     opts = [...opts, '-D', `${dictionary.path}`]; //eslint-disable-line
   } else if (Buffer.isBuffer(dictionary)) {
@@ -119,8 +121,8 @@ async function CreateDecompressStream(spawnOptions, streamOptions, zstdOptions, 
   }
 
   d.on('exit', (code, signal) => {
-    debug('exit', code, signal);
-    if (code !== 0) {
+    debug('d exit', code, signal);
+    if (code !== 0 && !terminate) {
       setTimeout(() => {
         d.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
       }, 1);
@@ -130,6 +132,9 @@ async function CreateDecompressStream(spawnOptions, streamOptions, zstdOptions, 
 
   return peek({ newline: false, maxBuffer: 10 }, (data, swap) => {
     if (isZst(data)) return swap(null, d);
+    debug('not zstd');
+    terminate = true;
+    d.end();
     return swap(null, through());
   });
 }
@@ -172,18 +177,21 @@ async function decompressBuffer(buffer, spawnOptions, streamOptions, zstdOptions
 
 // SimpleZSTD Class
 class SimpleZSTD {
-  #compressOven;
+  #compressQueue;
 
-  #decompressOven;
+  #decompressQueue;
 
   #bufferFileCleanup;
 
   #ready;
 
-  constructor(poolOptions, compLevel, spawnOptions, streamOptions, zstdOptions, dictionary) {
+  constructor(poolOptions, dictionary) {
     // Use a guard in all function to complete the async dictionary loading
-    debug('constructor', poolOptions, compLevel, spawnOptions, streamOptions, zstdOptions, dictionary);
+    debug('constructor', poolOptions, dictionary);
     const poolOpts = poolOptions || {};
+    poolOpts.compressQueue = poolOpts.compressQueue || {};
+    poolOpts.decompressQueue = poolOpts.decompressQueue || {};
+
     this.#ready = new Promise(async (resolve, reject) => {
       let path = null;
       let cleanup = null;
@@ -199,27 +207,27 @@ class SimpleZSTD {
           await writeFile(path, dictionary);
         }
 
-        this.#compressOven = new Oven(
-          poolOpts.compressQueueSize,
+        this.#compressQueue = new ProcessQueue(
+          poolOpts.compressQueue,
           (() => {
             debug('compress factory');
-            return CreateCompressStream(compLevel, spawnOptions, streamOptions, zstdOptions, { path });
+            return CreateCompressStream(poolOpts.compressQueue.compLevel, poolOpts.compressQueue.spawnOptions, poolOpts.compressQueue.streamOptions, poolOpts.compressQueue.zstdOptions, { path });
           }),
           async (p) => {
             debug('compress cleanup');
-            (await p).kill();
+            (await p).end();
           },
         );
 
-        this.#decompressOven = new Oven(
-          poolOpts.decompressQueueSize,
+        this.#decompressQueue = new ProcessQueue(
+          poolOpts.decompressQueue,
           (() => {
             debug('decompress factory');
-            return CreateDecompressStream(spawnOptions, streamOptions, zstdOptions, { path });
+            return CreateDecompressStream(poolOpts.decompressQueue.spawnOptions, poolOpts.decompressQueue.streamOptions, poolOpts.decompressQueue.zstdOptions, { path });
           }),
           async (p) => {
             debug('decompress cleanup');
-            (await p).kill();
+            (await p).end('1234567890000');
           },
         );
 
@@ -236,31 +244,31 @@ class SimpleZSTD {
   }
 
   destroy() {
-    this.#compressOven.destroy();
-    this.#decompressOven.destroy();
+    this.#compressQueue.destroy();
+    this.#decompressQueue.destroy();
     if (this.#bufferFileCleanup) this.#bufferFileCleanup();
     this.#bufferFileCleanup = null;
   }
 
   async compress() {
     await this.#ready;
-    return this.#compressOven.acquire();
+    return this.#compressQueue.acquire();
   }
 
   async compressBuffer(buffer) {
     await this.#ready;
-    const c = await this.#compressOven.acquire();
+    const c = await this.#compressQueue.acquire();
     return CompressBuffer(buffer, c);
   }
 
   async decompress() {
     await this.#ready;
-    return this.#decompressOven.acquire();
+    return this.#decompressQueue.acquire();
   }
 
   async decompressBuffer(buffer) {
     await this.#ready;
-    const d = await this.#decompressOven.acquire();
+    const d = await this.#decompressQueue.acquire();
     return DecompressBuffer(buffer, d);
   }
 }

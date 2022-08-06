@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "mocha",
-    "test-debug": "DEBUG=SimpleZSTD,SimpleZSTDOven mocha",
+    "test-debug": "DEBUG=SimpleZSTD,SimpleZSTDQueue mocha",
     "coverage": "nyc --reporter=html --reporter=text npm run test"
   },
   "repository": {

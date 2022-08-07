@@ -11,6 +11,10 @@ class ProcessQueue {
 
   #isDestroyed;
 
+  #hitCount;
+
+  #missCount;
+
   constructor(poolOptions, factory, destroy) {
     debug('constructor', poolOptions);
     this.#poolOptions = poolOptions || {};
@@ -19,9 +23,20 @@ class ProcessQueue {
     this.#destroy = destroy;
     this.#isDestroyed = false;
 
+    this.#hitCount = 0;
+    this.#missCount = 0;
+
     for (let i = 0; i < this.#poolOptions.targetSize || 0; i += 1) {
       this.#createResource();
     }
+  }
+
+  get hits() {
+    return this.#hitCount;
+  }
+
+  get misses() {
+    return this.#missCount;
   }
 
   async #createResource() {
@@ -39,9 +54,11 @@ class ProcessQueue {
         this.#createResource();
       }, 1);
       debug('acquire from queue');
+      this.#hitCount += 1;
       return this.#queue.pop();
     }
     debug('acquire create on demand');
+    this.#missCount += 1;
     return this.#factory();
   }
 

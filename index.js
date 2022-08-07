@@ -192,7 +192,7 @@ class SimpleZSTD {
     poolOpts.compressQueue = poolOpts.compressQueue || {};
     poolOpts.decompressQueue = poolOpts.decompressQueue || {};
 
-    this.#ready = new Promise(async (resolve, reject) => {
+    this.#ready = new Promise(async (resolve, reject) => { // eslint-disable-line
       let path = null;
       let cleanup = null;
 
@@ -241,6 +241,19 @@ class SimpleZSTD {
       if (this.#bufferFileCleanup) this.#bufferFileCleanup();
       this.#bufferFileCleanup = null;
     });
+  }
+
+  get queueStats() {
+    return {
+      compresss: {
+        hits: this.#compressQueue.hits,
+        misses: this.#compressQueue.misses,
+      },
+      decompresss: {
+        hits: this.#decompressQueue.hits,
+        misses: this.#decompressQueue.misses,
+      },
+    };
   }
 
   destroy() {

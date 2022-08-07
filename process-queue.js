@@ -50,9 +50,9 @@ class ProcessQueue {
   async acquire() {
     debug('acquire');
     if (this.#queue.length > 0) {
-      setTimeout(() => {
+      setImmediate(() => {
         this.#createResource();
-      }, 1);
+      });
       debug('acquire from queue');
       this.#hitCount += 1;
       return this.#queue.pop();

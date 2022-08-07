@@ -1,4 +1,6 @@
 /* eslint-env node, mocha */
+/* eslint-disable no-await-in-loop */
+/* eslint-disable no-console */
 
 const fs = require('fs');
 const path = require('path');
@@ -17,6 +19,8 @@ chai.use(require('chai-fs'));
 chai.use(chaiAsPromised); // use last
 
 const { assert } = chai;
+
+const asyncSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)); // eslint-disable-line
 
 // ZSTDCompress(compressionLevel, streamOptions)
 // ZSTDDecompress(streamOptions)
@@ -182,10 +186,10 @@ describe('Test simple-zstd Static Functions', () => {
 
 describe('Test simple-zstd Class', () => {
   it('should behave as the static function', async () => {
-    const i = new SimpleZSTD();
+    const z = new SimpleZSTD();
 
-    const c = await i.compress(3);
-    const d = await i.decompress();
+    const c = await z.compress(3);
+    const d = await z.decompress();
 
     return new Promise((resolve, reject) => {
       fs.createReadStream(src)
@@ -196,11 +200,11 @@ describe('Test simple-zstd Class', () => {
         .on('finish', () => {
           try {
             assert.fileEqual(src, dst1);
-            assert.equal(i.queueStats.compresss.hits, 0);
-            assert.equal(i.queueStats.compresss.misses, 1);
-            assert.equal(i.queueStats.decompresss.hits, 0);
-            assert.equal(i.queueStats.compresss.misses, 1);
-            i.destroy();
+            assert.equal(z.queueStats.compresss.hits, 0);
+            assert.equal(z.queueStats.compresss.misses, 1);
+            assert.equal(z.queueStats.decompresss.hits, 0);
+            assert.equal(z.queueStats.compresss.misses, 1);
+            z.destroy();
             resolve();
           } catch (err) {
             reject(err);
@@ -210,10 +214,10 @@ describe('Test simple-zstd Class', () => {
   });
 
   it('should handle back pressure', async () => {
-    const i = new SimpleZSTD();
+    const z = new SimpleZSTD();
 
-    const c = await i.compress(3);
-    const d = await i.decompress();
+    const c = await z.compress(3);
+    const d = await z.decompress();
 
     await pipelineAsync(
       fs.createReadStream(src),
@@ -223,18 +227,18 @@ describe('Test simple-zstd Class', () => {
       fs.createWriteStream(dst1),
     );
 
-    i.destroy();
+    z.destroy();
     assert.fileEqual(src, dst1);
   }).timeout(30000);
 
   it('should behave as the static function and pre create zstd child process', async () => {
-    const i = new SimpleZSTD({
+    const z = new SimpleZSTD({
       compressQueue: { targetSize: 1 },
       decompressQueue: { targetSize: 1 },
     });
 
-    const c = await i.compress(3);
-    const d = await i.decompress();
+    const c = await z.compress(3);
+    const d = await z.decompress();
 
     return new Promise((resolve, reject) => {
       fs.createReadStream(src)
@@ -245,12 +249,12 @@ describe('Test simple-zstd Class', () => {
         .on('finish', () => {
           try {
             assert.fileEqual(src, dst1);
-            assert.equal(i.queueStats.compresss.hits, 1);
-            assert.equal(i.queueStats.compresss.misses, 0);
-            assert.equal(i.queueStats.decompresss.hits, 1);
-            assert.equal(i.queueStats.compresss.misses, 0);
+            assert.equal(z.queueStats.compresss.hits, 1);
+            assert.equal(z.queueStats.compresss.misses, 0);
+            assert.equal(z.queueStats.decompresss.hits, 1);
+            assert.equal(z.queueStats.compresss.misses, 0);
 
-            i.destroy();
+            z.destroy();
             resolve();
           } catch (err) {
             reject(err);
@@ -262,59 +266,131 @@ describe('Test simple-zstd Class', () => {
   it('should accept a bigger buffer', async () => {
     const buffer = fs.readFileSync(src);
 
-    const i = new SimpleZSTD({
+    const z = new SimpleZSTD({
       compressQueue: { targetSize: 1 },
       decompressQueue: { targetSize: 1 },
-    }, 3);
+    });
 
-    const compressed = await i.compressBuffer(buffer);
-    const decompressed = await i.decompressBuffer(compressed);
+    const compressed = await z.compressBuffer(buffer);
+    const decompressed = await z.decompressBuffer(compressed);
 
-    i.destroy();
+    z.destroy();
     assert.deepEqual(buffer, decompressed);
-    assert.equal(i.queueStats.compresss.hits, 1);
-    assert.equal(i.queueStats.compresss.misses, 0);
-    assert.equal(i.queueStats.decompresss.hits, 1);
-    assert.equal(i.queueStats.compresss.misses, 0);
+    assert.equal(z.queueStats.compresss.hits, 1);
+    assert.equal(z.queueStats.compresss.misses, 0);
+    assert.equal(z.queueStats.decompresss.hits, 1);
+    assert.equal(z.queueStats.compresss.misses, 0);
   });
 
   it('should accept a dictionary file as a buffer', async () => {
     const buffer = fs.readFileSync(src);
     const dictBuffer = fs.readFileSync(dictionary);
 
-    const i = new SimpleZSTD({
+    const z = new SimpleZSTD({
       compressQueue: { targetSize: 1 },
       decompressQueue: { targetSize: 1 },
-    }, 3, {}, {}, [], dictBuffer);
+    }, dictBuffer);
 
-    const compressed = await i.compressBuffer(buffer);
-    const decompressed = await i.decompressBuffer(compressed);
+    const compressed = await z.compressBuffer(buffer);
+    const decompressed = await z.decompressBuffer(compressed);
 
-    i.destroy();
+    z.destroy();
     assert.deepEqual(buffer, decompressed);
-    assert.equal(i.queueStats.compresss.hits, 1);
-    assert.equal(i.queueStats.compresss.misses, 0);
-    assert.equal(i.queueStats.decompresss.hits, 1);
-    assert.equal(i.queueStats.compresss.misses, 0);
+    assert.equal(z.queueStats.compresss.hits, 1);
+    assert.equal(z.queueStats.compresss.misses, 0);
+    assert.equal(z.queueStats.decompresss.hits, 1);
+    assert.equal(z.queueStats.compresss.misses, 0);
   });
 
   it('should accept a dictionary file as a path', async () => {
     const buffer = fs.readFileSync(src);
 
-    const i = new SimpleZSTD({
+    const z = new SimpleZSTD({
       compressQueue: { targetSize: 1, complevel: 3 },
       decompressQueue: { targetSize: 1 },
-    }, 3, {}, {}, [], { path: dictionary });
+    }, { path: dictionary });
 
-    const compressed = await i.compressBuffer(buffer);
-    const decompressed = await i.decompressBuffer(compressed);
+    const compressed = await z.compressBuffer(buffer);
+    const decompressed = await z.decompressBuffer(compressed);
 
-    assert.equal(i.queueStats.compresss.hits, 1);
-    assert.equal(i.queueStats.compresss.misses, 0);
-    assert.equal(i.queueStats.decompresss.hits, 1);
-    assert.equal(i.queueStats.compresss.misses, 0);
+    assert.equal(z.queueStats.compresss.hits, 1);
+    assert.equal(z.queueStats.compresss.misses, 0);
+    assert.equal(z.queueStats.decompresss.hits, 1);
+    assert.equal(z.queueStats.compresss.misses, 0);
 
-    i.destroy();
+    z.destroy();
     assert.deepEqual(buffer, decompressed);
   });
+});
+
+describe('Performance Tests', () => {
+  it('should be faster with a queue for large number of requests', async () => {
+    // Use compLevel 1 time to place emphasis on the queue performance
+
+    const sampleSize = 1000;
+
+    const z = new SimpleZSTD({
+      compressQueue: { targetSize: 1, compLevel: 1 },
+      decompressQueue: { targetSize: 1 },
+    });
+
+    // await asyncSleep(100);
+
+    console.log('Start test');
+    const queueStart = new Date();
+
+    for (let i = 0; i < sampleSize; i += 1) {
+      const r = (Math.random()).toString(36);
+      const compressed = await z.compressBuffer(Buffer.from(r));
+      await z.decompressBuffer(compressed);
+    }
+
+    const queueTime = new Date() - queueStart;
+
+    console.log(`Queue Time: ${queueTime}ms`);
+
+    // No Queue
+
+    const noQueueStart = new Date();
+
+    for (let i = 0; i < sampleSize; i += 1) {
+      const r = (Math.random()).toString(36);
+      const compressed = await compressBuffer(Buffer.from(r), 1);
+      await decompressBuffer(compressed);
+    }
+
+    const noQueueTime = new Date() - noQueueStart;
+
+    console.log(`No Queue Time: ${noQueueTime}ms`);
+
+    z.destroy();
+
+    assert.isBelow(queueTime, noQueueTime);
+  }).timeout(30000);
+
+  it('there should be point of diminishing returns for queue length for a serail performance test', async () => {
+    const sampleSize = 100;
+
+    for (let s = 0; s < 10; s += 1) {
+      const z = new SimpleZSTD({
+        compressQueue: { targetSize: s, compLevel: 1 },
+        decompressQueue: { targetSize: s },
+      });
+
+      await asyncSleep(100);
+
+      const queueStart = new Date();
+
+      for (let i = 0; i < sampleSize; i += 1) {
+        const r = (Math.random()).toString(36);
+        const compressed = await z.compressBuffer(Buffer.from(r));
+        await z.decompressBuffer(compressed);
+      }
+
+      const queueTime = new Date() - queueStart;
+
+      console.log(`Queue ${s} Time: ${queueTime}ms`);
+      z.destroy();
+    }
+  }).timeout(30000);
 });

@@ -1,0 +1,1 @@
+{"schemas":[],"DB":{},"options":{"firstName":{"faker":"name.firstName"},"lastName":{"faker":"name.lastName"},"country":{"faker":"address.country"},"createdAt":{"faker":"date.past"},"username":{}}}

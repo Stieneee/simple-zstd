@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const { copyFile } = require('node:fs/promises');
 const { writeFile } = require('node:fs/promises');
 const { Readable, pipeline } = require('node:stream');
 const util = require('node:util');
@@ -10,6 +11,8 @@ const peek = require('peek-stream');
 const through = require('through2');
 const { file } = require('tmp-promise');
 const debug = require('debug')('SimpleZSTD');
+const ramdsk = require('ramdsk');
+const { v4: uuidv4 } = require('uuid');
 
 const ProcessQueue = require('./process-queue');
 const BufferWritable = require('./buffer-writable');
@@ -19,6 +22,7 @@ const pipelineAsync = util.promisify(pipeline);
 const find = (process.platform === 'win32') ? 'where zstd.exe' : 'which zstd';
 
 let bin;
+let ramDiskID = null;
 
 try {
   bin = execSync(find, { env: process.env }).toString().replace(/\n$/, '').replace(/\r$/, '');
@@ -31,6 +35,18 @@ try {
   fs.accessSync(bin, fs.constants.X_OK);
 } catch (err) {
   throw new Error('zstd is not executable');
+}
+
+async function enableRAMDisk() {
+  if (ramDiskID) return;
+  const id = uuidv4();
+  await ramdsk.createRamDisk(id, 1024 * 1024 * 1024);
+  await copyFile(bin, `/mnt/${id}/zstd`);
+  bin = `/mnt/${id}/zstd`;
+  ramDiskID = id;
+  process.on('exit', async () => {
+    await ramdsk.removeRamDisk(id);
+  });
 }
 
 async function CreateCompressStream(compLevel, spawnOptions, streamOptions, zstdOptions, dictionary) {
@@ -56,7 +72,7 @@ async function CreateCompressStream(compLevel, spawnOptions, streamOptions, zstd
   let c;
 
   try {
-    debug(bin, ['-c', `-l${lvl}`, ...opts], spawnOptions, streamOptions);
+    debug(bin, ['--no-progress', '-c', `-l${lvl}`, ...opts], spawnOptions, streamOptions);
     c = ps.spawn(bin, [`-${lvl}`, ...opts], spawnOptions, streamOptions);
   } catch (err) {
     // cleanup if error;
@@ -113,7 +129,7 @@ async function CreateDecompressStream(spawnOptions, streamOptions, zstdOptions, 
 
   try {
     debug(bin, ['-d', ...opts], spawnOptions, streamOptions);
-    d = ps.spawn(bin, ['-d', ...opts], spawnOptions, streamOptions);
+    d = ps.spawn(bin, ['--no-progress', '-d', ...opts], spawnOptions, streamOptions);
   } catch (err) {
     // cleanup if error
     if (cleanup) cleanup();
@@ -124,7 +140,7 @@ async function CreateDecompressStream(spawnOptions, streamOptions, zstdOptions, 
     debug('d exit', code, signal);
     if (code !== 0 && !terminate) {
       setTimeout(() => {
-        d.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
+        d.destroy(new Error(`zstd -d exited non zero. code: ${code} signal: ${signal}`));
       }, 1);
     }
     if (cleanup) cleanup();
@@ -292,4 +308,5 @@ module.exports = {
   compressBuffer,
   decompress,
   decompressBuffer,
+  enableRAMDisk,
 };

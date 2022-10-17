@@ -8,10 +8,12 @@ const stream = require('stream');
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
 
+const ProgressBar = require('progress');
+
 const brake = require('brake');
 const pipelineAsync = require('util').promisify(stream.pipeline);
 const {
-  SimpleZSTD, compress, decompress, compressBuffer, decompressBuffer,
+  SimpleZSTD, compress, decompress, compressBuffer, decompressBuffer, enableRAMDisk,
 } = require('../index');
 
 chai.use(require('chai-fs'));
@@ -26,8 +28,8 @@ const asyncSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)); //
 // ZSTDDecompress(streamOptions)
 
 const src = path.join(__dirname, 'sample/earth.jpg');
-const dst1 = '/tmp/example_copy1.txt';
-const dst2 = '/tmp/example_copy2.txt';
+const dst1 = '/tmp/example_copy1.jpg';
+const dst2 = '/tmp/example_copy2.jpg';
 
 const dstZstd1 = '/tmp/example_copy1.zst';
 const dstZstd2 = '/tmp/example_copy2.zst';
@@ -329,6 +331,8 @@ describe('Performance Tests', () => {
 
     const sampleSize = 1000;
 
+    const bar = new ProgressBar(':rate :eta :bar', { total: sampleSize });
+
     const z = new SimpleZSTD({
       compressQueue: { targetSize: 1, compLevel: 1 },
       decompressQueue: { targetSize: 1 },
@@ -343,6 +347,7 @@ describe('Performance Tests', () => {
       const r = (Math.random()).toString(36);
       const compressed = await z.compressBuffer(Buffer.from(r));
       await z.decompressBuffer(compressed);
+      bar.tick();
     }
 
     const queueTime = new Date() - queueStart;
@@ -366,7 +371,7 @@ describe('Performance Tests', () => {
     z.destroy();
 
     assert.isBelow(queueTime, noQueueTime);
-  }).timeout(30000);
+  }).timeout(3000000);
 
   it('there should be point of diminishing returns for queue length for a serail performance test', async () => {
     const sampleSize = 100;
@@ -393,4 +398,57 @@ describe('Performance Tests', () => {
       z.destroy();
     }
   }).timeout(30000);
+});
+
+describe('Performance Tests with RAM Disk Enabled', () => {
+  before(async () => {
+    await enableRAMDisk();
+  });
+
+  it('should be faster with a queue for large number of requests', async () => {
+    // Use compLevel 1 time to place emphasis on the queue performance
+
+    const sampleSize = 1000;
+
+    const bar = new ProgressBar(':rate :eta :bar', { total: sampleSize });
+
+    const z = new SimpleZSTD({
+      compressQueue: { targetSize: 1, compLevel: 1 },
+      decompressQueue: { targetSize: 1 },
+    });
+
+    // await asyncSleep(100);
+
+    console.log('Start test');
+    const queueStart = new Date();
+
+    for (let i = 0; i < sampleSize; i += 1) {
+      const r = (Math.random()).toString(36);
+      const compressed = await z.compressBuffer(Buffer.from(r));
+      await z.decompressBuffer(compressed);
+      bar.tick();
+    }
+
+    const queueTime = new Date() - queueStart;
+
+    console.log(`Queue Time: ${queueTime}ms`);
+
+    // No Queue
+
+    const noQueueStart = new Date();
+
+    for (let i = 0; i < sampleSize; i += 1) {
+      const r = (Math.random()).toString(36);
+      const compressed = await compressBuffer(Buffer.from(r), 1);
+      await decompressBuffer(compressed);
+    }
+
+    const noQueueTime = new Date() - noQueueStart;
+
+    console.log(`No Queue Time: ${noQueueTime}ms`);
+
+    z.destroy();
+
+    assert.isBelow(queueTime, noQueueTime);
+  }).timeout(3000000);
 });

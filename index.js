@@ -30,8 +30,8 @@ exports.ZSTDCompress = function compress(compLevel, spawnOptions, streamOptions,
 
   let lvl = compLevel;
   if (!lvl || typeof lvl !== 'number') lvl = 3;
-  lvl = parseInt(lvl); // Ensure that lvl is an integer
-  if (isNaN(lvl) || lvl < 1 || lvl > 22) lvl = 3;
+  lvl = parseInt(lvl, 10); // Ensure that lvl is an integer
+  if (Number.isNaN(lvl) || lvl < 1 || lvl > 22) lvl = 3;
 
   const c = ps.spawn(bin, [`-${lvl}`, ...zstdOptions], spawnOptions, streamOptions)
     .on('exit', (code, signal) => {

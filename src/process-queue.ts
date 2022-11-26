@@ -1,32 +1,32 @@
+import { PoolOpts } from "./types";
+import stream from 'stream';
+
 const debug = require('debug')('SimpleZSTDQueue');
 
-class ProcessQueue {
-  #poolOptions;
+export default class ProcessQueue {
+  #targetSize;
 
-  #queue;
+  #queue: Array<Promise<stream.Duplex>>;
 
   #factory;
 
   #destroy;
 
-  #isDestroyed;
-
   #hitCount;
 
   #missCount;
 
-  constructor(poolOptions, factory, destroy) {
-    debug('constructor', poolOptions);
-    this.#poolOptions = poolOptions || {};
+  constructor(targetSize: Number, factory: Function, destroy: Function) {
+    debug('constructor', targetSize);
+    this.#targetSize = targetSize;
     this.#queue = [];
     this.#factory = factory;
     this.#destroy = destroy;
-    this.#isDestroyed = false;
 
     this.#hitCount = 0;
     this.#missCount = 0;
 
-    for (let i = 0; i < this.#poolOptions.targetSize || 0; i += 1) {
+    for (let i = 0; i < targetSize || 0; i += 1) {
       this.#createResource();
     }
   }
@@ -41,7 +41,7 @@ class ProcessQueue {
 
   async #createResource() {
     debug('createResource?', this.#queue.length);
-    if (this.#queue.length < this.#poolOptions.targetSize) {
+    if (this.#queue.length < this.#targetSize ) {
       debug('createResource call factory');
       this.#queue.push(this.#factory());
     }
@@ -64,11 +64,8 @@ class ProcessQueue {
 
   async destroy() {
     debug('destroy', this.#queue.length);
-    this.#isDestroyed = true;
     while (this.#queue.length > 0) {
       this.#destroy(this.#queue.pop());
     }
   }
 }
-
-module.exports = ProcessQueue;

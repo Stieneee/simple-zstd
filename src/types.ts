@@ -1,21 +1,24 @@
+import {SpawnOptions} from 'child_process';
+import {TransformOptions} from 'stream';
+
 export interface CompressOpts {
-  compLevel?: Number,
+  compLevel?: number,
   dictionary?: Buffer | { path: string },
   zstdOptions?: Array<string>,
-  spawnOptions?: Object,
-  streamOptions?: Object,
+  spawnOptions?: SpawnOptions,
+  streamOptions?: TransformOptions,
 }
 
 export interface DecompressOpts {
   dictionary?: Buffer | { path: string },
   zstdOptions?: Array<string>,
-  spawnOptions?: Object,
-  streamOptions?: Object,
+  spawnOptions?: SpawnOptions,
+  streamOptions?: TransformOptions,
 }
 
 export interface PoolOpts {
-  compressQueueSize?: Number,
-  decompressQueueSize?: Number,
+  compressQueueSize?: number,
+  decompressQueueSize?: number,
   compressQueue?: CompressOpts,
   decompressQueue?: DecompressOpts,
 }
@@ -26,7 +29,7 @@ export interface DictionaryObject {
 
 export interface ZSTDOpts {
   spawnOptions?: object;
-  streamOptions?: object;
+  streamOptions?: TransformOptions;
   zstdOptions?: string[];
   dictionary?: DictionaryObject | Buffer;
 }

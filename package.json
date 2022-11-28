@@ -3,13 +3,16 @@
   "version": "2.0.0-0",
   "description": "Node.js interface to the system installed zstd.",
   "main": "dist/index.js",
-  "engines" : { 
-    "node" : ">=14.0.0"
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=14.0.0"
   },
   "scripts": {
     "build": "tsc",
+    "prepublish": "tsc",
+    "lint": "eslint . --ext .ts",
     "test": "mocha -r ts-node/register 'test/test.ts'",
-    "test-debug": "DEBUG=SimpleZSTD,SimpleZSTDQueue mocha -r ts-node/register 'test/test.ts'",
+    "test-debug": "DEBUG=SimpleZSTD,SimpleZSTDQueue mocha -r ts-node/register test/*.ts",
     "test-ci": "mocha -r ts-node/register 'test/test.ts --exit",
     "coverage": "nyc --reporter=html --reporter=text npm run test"
   },
@@ -51,15 +54,16 @@
   "devDependencies": {
     "@istanbuljs/nyc-config-typescript": "^1.0.2",
     "@types/chai": "^4.3.4",
+    "@types/chai-fs": "^2.0.2",
     "@types/mocha": "^10.0.0",
     "@types/node": "^18.11.9",
+    "@typescript-eslint/eslint-plugin": "^5.44.0",
+    "@typescript-eslint/parser": "^5.44.0",
     "brake": "^1.0.1",
     "chai": "^4.3.7",
     "chai-as-promised": "^7.1.1",
     "chai-fs": "^2.0.0",
-    "eslint": "^8.19.0",
-    "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-plugin-import": "^2.26.0",
+    "eslint": "^8.28.0",
     "mocha": "^10.1.0",
     "mocker-data-generator": "^2.12.0",
     "nyc": "^15.1.0",

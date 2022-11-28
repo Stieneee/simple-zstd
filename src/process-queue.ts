@@ -1,22 +1,23 @@
-import { PoolOpts } from "./types";
-import stream from 'stream';
+// This is a generic class for creating a queue of worker processes.
 
-const debug = require('debug')('SimpleZSTDQueue');
+import Debug from 'debug';
 
-export default class ProcessQueue {
+const debug = Debug('SimpleZSTDQueue');
+
+export default class ProcessQueue<QueueItem> {
   #targetSize;
 
-  #queue: Array<Promise<stream.Duplex>>;
+  #queue: Array<Promise<QueueItem>>;
 
-  #factory;
+  #factory: () => Promise<QueueItem>;
 
-  #destroy;
+  #destroy: (process: Promise<QueueItem>) => void;
 
   #hitCount;
 
   #missCount;
 
-  constructor(targetSize: Number, factory: Function, destroy: Function) {
+  constructor(targetSize: number, factory: () => Promise<QueueItem>, destroy: (process: Promise<QueueItem>) => void) {
     debug('constructor', targetSize);
     this.#targetSize = targetSize;
     this.#queue = [];
@@ -47,17 +48,20 @@ export default class ProcessQueue {
     }
   }
 
-  async acquire() {
+  async acquire(): Promise<QueueItem> {
     debug('acquire');
-    if (this.#queue.length > 0) {
+    const attempt = this.#queue.pop();
+
+    if (attempt) {
+      debug('acquire hit');
       setImmediate(() => {
         this.#createResource();
       });
-      debug('acquire from queue');
       this.#hitCount += 1;
-      return this.#queue.pop();
+      return attempt;
     }
-    debug('acquire create on demand');
+
+    debug('acquire miss');
     this.#missCount += 1;
     return this.#factory();
   }
@@ -65,7 +69,8 @@ export default class ProcessQueue {
   async destroy() {
     debug('destroy', this.#queue.length);
     while (this.#queue.length > 0) {
-      this.#destroy(this.#queue.pop());
+      const p = this.#queue.pop();
+      if (p) this.#destroy(p);
     }
   }
 }

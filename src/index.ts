@@ -1,22 +1,24 @@
-const fs = require('node:fs');
-const { writeFile } = require('node:fs/promises');
-const { Readable, pipeline } = require('node:stream');
-const util = require('node:util');
+import fs from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { Readable, Duplex, pipeline } from 'node:stream';
+import { promisify } from 'node:util';
+import { execSync } from 'node:child_process';
+
+import ProcessStream from 'process-streams';
+
+import isZst from 'is-zst';
+import peek from 'peek-stream';
+import through from 'through2';
+import {file} from 'tmp-promise';
+import Debug from 'debug';
+
+const debug = Debug('SimpleZSTD');
 
 import ProcessQueue from './process-queue';
 import BufferWritable from './buffer-writable';
-import stream, { Transform } from 'stream';
 import { ZSTDOpts, PoolOpts, DictionaryObject } from './types';
 
-const ProcessStream = require('process-streams');
-const { execSync } = require('node:child_process');
-const isZst = require('is-zst');
-const peek = require('peek-stream');
-const through = require('through2');
-const { file } = require('tmp-promise');
-const debug = require('debug')('SimpleZSTD');
-
-const pipelineAsync = util.promisify(pipeline);
+const pipelineAsync = promisify(pipeline);
 
 const find = (process.platform === 'win32') ? 'where zstd.exe' : 'which zstd';
 
@@ -35,13 +37,13 @@ try {
   throw new Error('zstd is not executable');
 }
 
-async function CreateCompressStream(compLevel: Number, opts: ZSTDOpts): Promise<stream.Transform> {
+async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<Duplex> {
   const ps = new ProcessStream();
 
   let lvl = compLevel;
   let zo = opts.zstdOptions || [];
   let path = null;
-  let cleanup: Function | null = null;
+  let cleanup: () => void = () => null;
 
   if (!lvl) lvl = 3;
   if (lvl < 1 || lvl > 22) lvl = 3;
@@ -55,35 +57,33 @@ async function CreateCompressStream(compLevel: Number, opts: ZSTDOpts): Promise<
     zo = [...zo, '-D', `${path}`]; //eslint-disable-line
   }
 
-  let c: any;
+  let c: Duplex;
 
   try {
     debug(bin,        ['-zc', `-${lvl}`, ...zo], opts.spawnOptions, opts.streamOptions);
     c = ps.spawn(bin, ['-zc', `-${lvl}`, ...zo], opts.spawnOptions, opts.streamOptions);
   } catch (err) {
     // cleanup if error;
-    if (cleanup) cleanup();
+    cleanup();
     throw err;
   }
 
-  c.on('exit', (code: Number, signal: any) => {
+  c.on('exit', (code: number, signal ) => {
     debug('c exit', code, signal);
     if (code !== 0) {
       setTimeout(() => {
         c.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
       }, 1);
     }
-    if (cleanup) cleanup();
+    cleanup();
   });
 
   return c;
 }
 
-function CompressBuffer(buffer: Buffer, c: any): Promise<Buffer> {
+function CompressBuffer(buffer: Buffer, c: Duplex): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const w = new BufferWritable({});
-
-    
 
     pipelineAsync(
       Readable.from(buffer),
@@ -98,15 +98,15 @@ function CompressBuffer(buffer: Buffer, c: any): Promise<Buffer> {
   });
 }
 
-async function CreateDecompressStream(opts: ZSTDOpts): Promise<stream.Transform> {
+async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
   // Dictionary
   const ps = new ProcessStream();
 
   let zo = opts.zstdOptions || [];
   let path = null;
-  let cleanup: Function | null = null;
+  let cleanup: () => void = () => null;
 
-  let terminate: Boolean = false;
+  let terminate = false;
 
   if (opts.dictionary && 'path' in opts.dictionary) {
     zo = [...zo, '-D', `${opts.dictionary.path}`]; //eslint-disable-line
@@ -116,28 +116,28 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<stream.Transform>
     zo = [...zo, '-D', `${path}`]; //eslint-disable-line
   }
 
-  let d: any;
+  let d: Duplex;
 
   try {
     debug(bin,        ['-dc', ...zo], opts.spawnOptions, opts.streamOptions);
     d = ps.spawn(bin, ['-dc', ...zo], opts.spawnOptions, opts.streamOptions);
   } catch (err) {
     // cleanup if error
-    if (cleanup) cleanup();
+    cleanup();
     throw err;
   }
 
-  d.on('exit', (code: Number, signal: any) => {
+  d.on('exit', (code: number, signal) => {
     debug('d exit', code, signal);
     if (code !== 0 && !terminate) {
       setTimeout(() => {
         d.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
       }, 1);
     }
-    if (cleanup) cleanup();
+    cleanup();
   });
 
-  return peek({ newline: false, maxBuffer: 10 }, (data: Buffer, swap: Function) => {
+  return peek({ newline: false, maxBuffer: 10 }, (data: Buffer, swap: (err: Error | null, parser: Duplex) => Duplex) => {
     if (isZst(data)) return swap(null, d);
     debug('not zstd');
     terminate = true;
@@ -146,7 +146,7 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<stream.Transform>
   });
 }
 
-function DecompressBuffer(buffer: Buffer, d: any): Promise<Buffer> {
+function DecompressBuffer(buffer: Buffer, d: Duplex): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const w = new BufferWritable({});
 
@@ -162,16 +162,16 @@ function DecompressBuffer(buffer: Buffer, d: any): Promise<Buffer> {
 
 // Standalone Functions
 
-export function compress(compLevel: Number, opts: ZSTDOpts = {}): Promise<Transform> {
+export function compress(compLevel: number, opts: ZSTDOpts = {}): Promise<Duplex> {
   return CreateCompressStream(compLevel, opts);
 }
 
-export async function compressBuffer(buffer: Buffer, compLevel: Number, opts: ZSTDOpts = {}): Promise<Buffer> {
+export async function compressBuffer(buffer: Buffer, compLevel: number, opts: ZSTDOpts = {}): Promise<Buffer> {
   const c = await CreateCompressStream(compLevel, opts);
   return CompressBuffer(buffer, c);
 }
 
-export function decompress(opts: ZSTDOpts = {}): Promise<Transform> {
+export function decompress(opts: ZSTDOpts = {}): Promise<Duplex> {
   return CreateDecompressStream(opts);
 }
 
@@ -182,9 +182,9 @@ export async function decompressBuffer(buffer: Buffer, opts: ZSTDOpts = {}): Pro
 
 // SimpleZSTD Class
 export class SimpleZSTD {
-  #compressQueue!: ProcessQueue;
-  #decompressQueue!: ProcessQueue;
-  #bufferFileCleanup: Function;
+  #compressQueue!: ProcessQueue<Duplex>;
+  #decompressQueue!: ProcessQueue<Duplex>;
+  #bufferFileCleanup: () => void = () => null;
   #ready;
 
   constructor(poolOptions?: PoolOpts, dictionary?: Buffer | DictionaryObject) {
@@ -193,7 +193,7 @@ export class SimpleZSTD {
     // po.compressQueue = po.compressQueue || {};
     // po.decompressQueue = po.decompressQueue || {};
 
-    this.#bufferFileCleanup = () => {};
+    this.#bufferFileCleanup = () => null;
 
     this.#ready = new Promise(async (resolve, reject) => { // eslint-disable-line
       let path: string | null = null;
@@ -222,7 +222,7 @@ export class SimpleZSTD {
               }
             );
           }),
-          async (p: Promise<stream.Duplex>) => {
+          async (p: Promise<Duplex>) => {
             debug('compress cleanup');
             (await p).end();
           },
@@ -237,7 +237,7 @@ export class SimpleZSTD {
               dictionary: path ? { path } : undefined,
             });
           }),
-          async (p: Promise<stream.Duplex>) => {
+          async (p: Promise<Duplex>) => {
             debug('decompress cleanup');
             (await p).end('1234567890000');
           },
@@ -250,8 +250,8 @@ export class SimpleZSTD {
       }
     }).catch((err) => {
       debug('ready error', err);
-      if (this.#bufferFileCleanup) this.#bufferFileCleanup();
-      this.#bufferFileCleanup = () => {};
+      this.#bufferFileCleanup();
+      this.#bufferFileCleanup = () => null;
     });
   }
 
@@ -271,11 +271,11 @@ export class SimpleZSTD {
   destroy() {
     this.#compressQueue.destroy();
     this.#decompressQueue.destroy();
-    if (this.#bufferFileCleanup) this.#bufferFileCleanup();
-    this.#bufferFileCleanup = () => {};
+    this.#bufferFileCleanup();
+    this.#bufferFileCleanup = () => null;
   }
 
-  async compress(): Promise<stream.Transform> {
+  async compress(): Promise<Duplex> {
     await this.#ready;
     return this.#compressQueue.acquire();
   }
@@ -286,7 +286,7 @@ export class SimpleZSTD {
     return CompressBuffer(buffer, c);
   }
 
-  async decompress(): Promise<stream.Transform> {
+  async decompress(): Promise<Duplex> {
     await this.#ready;
     return this.#decompressQueue.acquire();
   }

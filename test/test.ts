@@ -1,24 +1,25 @@
 /* eslint-env node, mocha */
-/* eslint-disable no-await-in-loop */
-/* eslint-disable no-console */
 
-const fs = require('fs');
-const path = require('path');
-const stream = require('stream');
-const chai = require('chai');
-const chaiAsPromised = require('chai-as-promised');
+import fs from 'node:fs';
+import path from 'node:path';
+import stream from 'node:stream';
 
-const brake = require('brake');
-const pipelineAsync = require('util').promisify(stream.pipeline);
+import chai from 'chai';
+import chaiAsPromised from 'chai-as-promised';
+import chaiFs from 'chai-fs';
+
+import brake from 'brake';
+import { promisify } from 'util';
+const pipelineAsync = promisify(stream.pipeline);
+
 import { SimpleZSTD, compress, decompress, compressBuffer, decompressBuffer } from '../src/index';
 
-chai.use(require('chai-fs'));
-
+chai.use(chaiFs);
 chai.use(chaiAsPromised); // use last
 
 const { assert } = chai;
 
-const asyncSleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)); // eslint-disable-line
+const asyncSleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ZSTDCompress(compressionLevel, streamOptions)
 // ZSTDDecompress(streamOptions)

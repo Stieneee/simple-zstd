@@ -3,13 +3,13 @@
 [![Build Status](https://travis-ci.org/Stieneee/simple-zstd.svg?branch=master)](https://travis-ci.org/Stieneee/simple-zstd)
 [![License](https://badgen.net/badge/license/MIT/blue)](https://choosealicense.com/licenses/mit/)
 
-Node.js interface to system installed zstandard (zstd).
+Node.js interface to system installed Zstandard (zstd).
 
 ## "Simple"-ZSTD
 
 The package name is inspired by another simple-git which is a wrapper around the git binary installed on the system.
 In summary this package, like simple-git, attempts to provide a lightweight wrapper around the system installed ZSTD binary.
-This provides a more stable package in comparison to a package that builds against a library at the cost of having to manage child process.
+This provides a more stable package in comparison to a package that builds against a library at the cost of being dependant on a system installed dependency.
 
 A few additional features have made there way into version 2 including a class that will attempt to pre-start child processes before they are need for the most latency concerned applications.
 
@@ -42,22 +42,31 @@ Example:
 The static functions provide the most basic interface for usage
 
 ```javascript
-const {compress, decompress, compressBuffer, decompressBuffer} = require('../index');
+const {compress, decompress, compressBuffer, decompressBuffer} = require('simple-zstd');
 
-compLevel = 3; // ZSTD Compression Level
-spawnOptions = {} // node:child_process spawnOptions object - adjust the spawn options of the ZSTD process
-streamOptions = {} // node:stream streamOptions - adjust the stream options 
-zstdOptions = [] // Array of Options to pass to the zstd process e.g. ['--ultra']
-dictionary = Buffer || {path} // Supply an optional dictionary buffer or path to dictionary file
+interface CompressOpts {
+  compLevel?: number, // ZSTD Compression Level
+  dictionary?: Buffer | { path: string }, // node:child_process spawnOptions object - adjust the spawn options of the ZSTD process
+  zstdOptions?: Array<string>, // Array of Options to pass to the zstd process e.g. ['--ultra']. See the zstd documentation for more information.
+  spawnOptions?: SpawnOptions, // node:stream streamOptions - adjust the stream options 
+  streamOptions?: TransformOptions, // Supply an optional dictionary buffer or path to dictionary file
+}
+
+interface DecompressOpts {
+  dictionary?: Buffer | { path: string },
+  zstdOptions?: Array<string>,
+  spawnOptions?: SpawnOptions,
+  streamOptions?: TransformOptions,
+}
 
 // Static Functions
-function compress(compLevel, spawnOptions, streamOptions, zstdOptions, dictionary) // returns a promise that resolves to a stream
-function compressBuffer(buffer, compLevel, spawnOptions, streamOptions, zstdOptions, dictionary) // returns a promise that resolves to a buffer
-function decompress(spawnOptions, streamOptions, zstdOptions, dictionary) // returns a promise that resolves to a stream
-function decompressBuffer(buffer, spawnOptions, streamOptions, zstdOptions, dictionary) // returns a promise that resolves to a buffer
+function compress(compLevel, CompressOpts) // returns a promise that resolves to a stream
+function compressBuffer(buffer, CompressOpts) // returns a promise that resolves to a buffer
+function decompress(spawnOptions, DecompressOpts) // returns a promise that resolves to a stream
+function decompressBuffer(buffer, DecompressOpts) // returns a promise that resolves to a buffer
 ```
 
-The SimpleZSTD class allows an the settings to be preset for a pool of child process.
+The SimpleZSTD class allows the settings to be preset for a pool of child process.
 The function names are the same on the class however the options can not be changed from the class constructor.
 
 ### Example - Stream Interface
@@ -111,9 +120,8 @@ printString();
 ### Example - Class Interface
 
 This example demonstrates the use of the class interface.
-Once a class instance is created it can be used to with either the stream or buffer interface.
+Once SimpleZSTD has been instantiated it can be used to with either the stream or buffer interface.
 Options can not be changed once the class is instantiated.
-This due to the fact that the class will start to spawn child processes with settings passed to the constructor.
 Calling ```destroy()``` will kill all child processes.
 
 ```javascript
@@ -161,9 +169,10 @@ copyFile();
 ## zstdOptions
 
 This interface allows you to pass any command line option to the zstd process.
+
   
 ```javascript
-const c2 = await compress(22, {}, {}, ['--ultra']);
+const c2 = await compress(22, {zstdOptions: ['--ultra']});
 ```
 
 ## Debug
@@ -176,6 +185,18 @@ This will presents debug information for both zstd spawns and the child process 
 DEBUG=SimpleZSTD,SimpleZSTDQueue node example.js
 
 ```
+
+## Performance Benchmarks
+
+This package has been benchmarked against other zstd packages.
+At this time is appears to be the fastest package for processing large files.
+
+[Benchmark Tests](https://github.com/Stieneee/node-compression-test)
+
+## Performance Considerations
+
+This packages spawns a child process for each compression or decompression.
+The child process creation can become a bottleneck if many small files are being compressed or decompressed rapidly.
 
 ## Contributing
 

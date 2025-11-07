@@ -1,1 +1,5 @@
 test
+*.ts
+tsconfig.json
+!dist/**/*.d.ts
+index.ts

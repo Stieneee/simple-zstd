@@ -1,23 +1,20 @@
 /* eslint-env node, mocha */
 
-const fs = require('fs');
-const path = require('path');
-const stream = require('stream');
-const chai = require('chai');
-const chaiAsPromised = require('chai-as-promised');
-
-const brake = require('brake');
-const pipelineAsync = require('util').promisify(stream.pipeline);
-const { ZSTDCompress, ZSTDDecompress, ZSTDDecompressMaybe } = require('../index');
+import * as fs from 'fs';
+import * as path from 'path';
+import * as stream from 'stream';
+import * as chai from 'chai';
+import chaiAsPromised from 'chai-as-promised';
+import brake from 'brake';
+import { promisify } from 'util';
+import { ZSTDCompress, ZSTDDecompress, ZSTDDecompressMaybe } from '../index';
 
 chai.use(require('chai-fs'));
-
 chai.use(chaiAsPromised); // use last
 
 const { assert } = chai;
 
-// ZSTDCompress(compressionLevel, streamOptions)
-// ZSTDDecompress(streamOptions)
+const pipelineAsync = promisify(stream.pipeline);
 
 const src = path.join(__dirname, 'sample/earth.jpg');
 const dst1 = '/tmp/example_copy1.txt';
@@ -106,14 +103,12 @@ describe('Test simple-zstd', () => {
     await pipelineAsync(
       fs.createReadStream(src),
       ZSTDCompress(1, {}, {}, []),
-      // ZSTDDecompressMaybe(),
       fs.createWriteStream(dstZstd1),
     );
 
     await pipelineAsync(
       fs.createReadStream(src),
       ZSTDCompress(19, {}, {}, []),
-      // ZSTDDecompressMaybe(),
       fs.createWriteStream(dstZstd2),
     );
 
@@ -126,14 +121,12 @@ describe('Test simple-zstd', () => {
     await pipelineAsync(
       fs.createReadStream(src),
       ZSTDCompress(1),
-      // ZSTDDecompressMaybe(),
       fs.createWriteStream(dstZstd1),
     );
 
     await pipelineAsync(
       fs.createReadStream(src),
       ZSTDCompress(22, {}, {}, ['--ultra']),
-      // ZSTDDecompressMaybe(),
       fs.createWriteStream(dstZstd2),
     );
 
@@ -145,12 +138,11 @@ describe('Test simple-zstd', () => {
 
   it('should throw an error if zstd is called incorrectly', async () => {
     // missing --ultra flag
-    const compress = ZSTDCompress(22, { pipe: true }, {}, ['']);
+    const compress = ZSTDCompress(22, {}, {}, ['']);
 
     await chai.expect(pipelineAsync(
       fs.createReadStream(src),
       compress,
-      // ZSTDDecompressMaybe(),
       fs.createWriteStream(dstZstd2),
     )).to.be.rejected;
   }).timeout(30000);

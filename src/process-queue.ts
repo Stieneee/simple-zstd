@@ -68,9 +68,13 @@ export default class ProcessQueue<QueueItem> {
 
   async destroy() {
     debug('destroy', this.#queue.length);
+    const destroyPromises: Promise<void>[] = [];
     while (this.#queue.length > 0) {
       const p = this.#queue.pop();
-      if (p) this.#destroy(p);
+      if (p) {
+        destroyPromises.push(Promise.resolve(this.#destroy(p)));
+      }
     }
+    await Promise.all(destroyPromises);
   }
 }

@@ -1,14 +1,10 @@
 import fs from 'node:fs';
 import { writeFile } from 'node:fs/promises';
-import { Readable, Duplex, pipeline } from 'node:stream';
-import { promisify } from 'node:util';
+import { Readable, Duplex, PassThrough } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { execSync } from 'node:child_process';
 
-import ProcessStream from 'process-streams';
-
 import isZst from 'is-zst';
-import peek from 'peek-stream';
-import through from 'through2';
 import {file} from 'tmp-promise';
 import Debug from 'debug';
 
@@ -16,9 +12,9 @@ const debug = Debug('SimpleZSTD');
 
 import ProcessQueue from './process-queue';
 import BufferWritable from './buffer-writable';
+import ProcessDuplex from './process-duplex';
+import PeekPassThrough from './peek-transform';
 import { ZSTDOpts, PoolOpts, DictionaryObject } from './types';
-
-const pipelineAsync = promisify(pipeline);
 
 const find = (process.platform === 'win32') ? 'where zstd.exe' : 'which zstd';
 
@@ -38,8 +34,6 @@ try {
 }
 
 async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<Duplex> {
-  const ps = new ProcessStream();
-
   let lvl = compLevel;
   let zo = opts.zstdOptions || [];
   let path = null;
@@ -60,15 +54,15 @@ async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<
   let c: Duplex;
 
   try {
-    debug(bin,        ['-zc', `-${lvl}`, ...zo], opts.spawnOptions, opts.streamOptions);
-    c = ps.spawn(bin, ['-zc', `-${lvl}`, ...zo], opts.spawnOptions, opts.streamOptions);
+    debug(bin, ['-zc', `-${lvl}`, ...zo], opts.spawnOptions, opts.streamOptions);
+    c = new ProcessDuplex(bin, ['-zc', `-${lvl}`, ...zo], opts.spawnOptions, opts.streamOptions);
   } catch (err) {
     // cleanup if error;
     cleanup();
     throw err;
   }
 
-  c.on('exit', (code: number, signal ) => {
+  c.on('exit', (code: number, signal) => {
     debug('c exit', code, signal);
     if (code !== 0) {
       setTimeout(() => {
@@ -85,23 +79,24 @@ function CompressBuffer(buffer: Buffer, c: Duplex): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const w = new BufferWritable({});
 
-    pipelineAsync(
+    pipeline(
       Readable.from(buffer),
       c,
       w,
     )
-      .then(() => resolve(w.getBuffer()))
-      .catch((err: Error) => { 
-        console.log('HERE');
-        reject(err)
+      .then(() => {
+        c.destroy();
+        resolve(w.getBuffer());
+      })
+      .catch((err: Error) => {
+        c.destroy();
+        reject(err);
       });
   });
 }
 
 async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
   // Dictionary
-  const ps = new ProcessStream();
-
   let zo = opts.zstdOptions || [];
   let path = null;
   let cleanup: () => void = () => null;
@@ -119,8 +114,8 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
   let d: Duplex;
 
   try {
-    debug(bin,        ['-dc', ...zo], opts.spawnOptions, opts.streamOptions);
-    d = ps.spawn(bin, ['-dc', ...zo], opts.spawnOptions, opts.streamOptions);
+    debug(bin, ['-dc', ...zo], opts.spawnOptions, opts.streamOptions);
+    d = new ProcessDuplex(bin, ['-dc', ...zo], opts.spawnOptions, opts.streamOptions);
   } catch (err) {
     // cleanup if error
     cleanup();
@@ -137,12 +132,15 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
     cleanup();
   });
 
-  return peek({ newline: false, maxBuffer: 10 }, (data: Buffer, swap: (err: Error | null, parser: Duplex) => Duplex) => {
-    if (isZst(data)) return swap(null, d);
-    debug('not zstd');
-    terminate = true;
-    d.end();
-    return swap(null, through());
+  return new PeekPassThrough({ maxBuffer: 10 }, (data: Buffer, swap) => {
+    if (isZst(data)) {
+      swap(null, d);
+    } else {
+      debug('not zstd');
+      terminate = true;
+      d.end();
+      swap(null, new PassThrough());
+    }
   });
 }
 
@@ -150,13 +148,19 @@ function DecompressBuffer(buffer: Buffer, d: Duplex): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const w = new BufferWritable({});
 
-    pipelineAsync(
+    pipeline(
       Readable.from(buffer),
       d,
       w,
     )
-      .then(() => resolve(w.getBuffer() || Buffer.alloc(0)))
-      .catch((err: Error) => reject(err));
+      .then(() => {
+        d.destroy();
+        resolve(w.getBuffer() || Buffer.alloc(0));
+      })
+      .catch((err: Error) => {
+        d.destroy();
+        reject(err);
+      });
   });
 }
 
@@ -224,7 +228,8 @@ export class SimpleZSTD {
           }),
           async (p: Promise<Duplex>) => {
             debug('compress cleanup');
-            (await p).end();
+            const stream = await p;
+            stream.destroy();
           },
         );
 
@@ -239,7 +244,8 @@ export class SimpleZSTD {
           }),
           async (p: Promise<Duplex>) => {
             debug('decompress cleanup');
-            (await p).end('1234567890000');
+            const stream = await p;
+            stream.destroy();
           },
         );
 

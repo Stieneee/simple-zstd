@@ -2,15 +2,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import stream from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 import chai from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import chaiFs from 'chai-fs';
 
 import brake from 'brake';
-import { promisify } from 'util';
-const pipelineAsync = promisify(stream.pipeline);
 
 import { SimpleZSTD, compress, decompress, compressBuffer, decompressBuffer } from '../src/index';
 
@@ -66,7 +64,7 @@ describe('Test simple-zstd Static Functions', () => {
     const c = await compress(3);
     const d = await decompress();
 
-    await pipelineAsync(
+    await pipeline(
       fs.createReadStream(src),
       c,
       d,
@@ -80,7 +78,7 @@ describe('Test simple-zstd Static Functions', () => {
     const c = await compress(3);
     const d = await decompress();
 
-    await pipelineAsync(
+    await pipeline(
       fs.createReadStream(src),
       c,
       d,
@@ -95,13 +93,13 @@ describe('Test simple-zstd Static Functions', () => {
     const c1 = await compress(1, {});
     const c2 = await compress(19, {});
 
-    await pipelineAsync(
+    await pipeline(
       fs.createReadStream(src),
       c1,
       fs.createWriteStream(dstZstd1),
     );
 
-    await pipelineAsync(
+    await pipeline(
       fs.createReadStream(src),
       c2,
       fs.createWriteStream(dstZstd2),
@@ -116,13 +114,13 @@ describe('Test simple-zstd Static Functions', () => {
     const c1 = await compress(1);
     const c2 = await compress(22, {zstdOptions: ['--ultra']});
 
-    await pipelineAsync(
+    await pipeline(
       fs.createReadStream(src),
       c1,
       fs.createWriteStream(dstZstd1),
     );
 
-    await pipelineAsync(
+    await pipeline(
       fs.createReadStream(src),
       c2,
       fs.createWriteStream(dstZstd2),
@@ -207,7 +205,7 @@ describe('Test simple-zstd Class', () => {
     const c = await z.compress();
     const d = await z.decompress();
 
-    await pipelineAsync(
+    await pipeline(
       fs.createReadStream(src),
       c,
       d,

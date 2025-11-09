@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { Readable, Duplex, PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { execSync } from 'node:child_process';
@@ -14,7 +15,66 @@ import ProcessQueue from './process-queue';
 import BufferWritable from './buffer-writable';
 import ProcessDuplex from './process-duplex';
 import PeekPassThrough from './peek-transform';
-import { ZSTDOpts, PoolOpts, DictionaryObject } from './types';
+import { ZSTDOpts, PoolOpts } from './types';
+
+// Export types for consumers
+export type { ZSTDOpts, PoolOpts, CompressOpts, DecompressOpts, DictionaryObject } from './types';
+
+// Dictionary cache to avoid recreating temp files for the same dictionary buffer
+// Map: hash -> { path: string, cleanup: () => void, refCount: number }
+const dictionaryCache = new Map<string, { path: string; cleanup: () => void; refCount: number }>();
+
+function hashBuffer(buffer: Buffer): string {
+  return createHash('sha256').update(buffer).digest('hex');
+}
+
+async function getCachedDictionaryPath(dictionary: Buffer): Promise<{ path: string; cleanup: () => void }> {
+  const hash = hashBuffer(dictionary);
+
+  let cached = dictionaryCache.get(hash);
+  if (cached) {
+    cached.refCount++;
+    debug(`Dictionary cache hit: ${hash.slice(0, 8)}... (refCount: ${cached.refCount})`);
+    return {
+      path: cached.path,
+      cleanup: () => {
+        cached!.refCount--;
+        debug(`Dictionary refCount decreased: ${hash.slice(0, 8)}... (refCount: ${cached!.refCount})`);
+        if (cached!.refCount <= 0) {
+          debug(`Cleaning up cached dictionary: ${hash.slice(0, 8)}...`);
+          cached!.cleanup();
+          dictionaryCache.delete(hash);
+        }
+      }
+    };
+  }
+
+  debug(`Dictionary cache miss: ${hash.slice(0, 8)}... - creating temp file`);
+  const { path, cleanup: tmpCleanup } = await file({ prefix: 'zstd-dict-' });
+  await writeFile(path, dictionary);
+
+  dictionaryCache.set(hash, {
+    path,
+    cleanup: tmpCleanup,
+    refCount: 1
+  });
+
+  return {
+    path,
+    cleanup: () => {
+      const cached = dictionaryCache.get(hash);
+      if (cached) {
+        cached.refCount--;
+        debug(`Dictionary refCount decreased: ${hash.slice(0, 8)}... (refCount: ${cached.refCount})`);
+        if (cached.refCount <= 0) {
+          debug(`Cleaning up cached dictionary: ${hash.slice(0, 8)}...`);
+          cached.cleanup();
+          dictionaryCache.delete(hash);
+        }
+      }
+    }
+  };
+}
 
 const find = (process.platform === 'win32') ? 'where zstd.exe' : 'which zstd';
 
@@ -36,7 +96,7 @@ try {
 async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<Duplex> {
   let lvl = compLevel;
   let zo = opts.zstdOptions || [];
-  let path = null;
+  let path: string | null = null;
   let cleanup: () => void = () => null;
 
   if (!lvl) lvl = 3;
@@ -44,11 +104,11 @@ async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<
 
   // Dictionary
   if (opts.dictionary && 'path' in opts.dictionary) {
-    zo = [...zo, '-D', `${opts.dictionary?.path}`];  
+    zo = [...zo, '-D', `${opts.dictionary.path}`];
   } else if (Buffer.isBuffer(opts.dictionary)) {
-    ({ path, cleanup } = await file());
-    await writeFile(path, opts.dictionary);
-    zo = [...zo, '-D', `${path}`];  
+    // Use cached dictionary to avoid recreating temp files
+    ({ path, cleanup } = await getCachedDictionaryPath(opts.dictionary));
+    zo = [...zo, '-D', `${path}`];
   }
 
   let c: Duplex;
@@ -98,17 +158,17 @@ function CompressBuffer(buffer: Buffer, c: Duplex): Promise<Buffer> {
 async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
   // Dictionary
   let zo = opts.zstdOptions || [];
-  let path = null;
+  let path: string | null = null;
   let cleanup: () => void = () => null;
 
   let terminate = false;
 
   if (opts.dictionary && 'path' in opts.dictionary) {
-    zo = [...zo, '-D', `${opts.dictionary.path}`];  
+    zo = [...zo, '-D', `${opts.dictionary.path}`];
   } else if (Buffer.isBuffer(opts.dictionary)) {
-    ({ path, cleanup } = await file());
-    await writeFile(path, opts.dictionary);
-    zo = [...zo, '-D', `${path}`];  
+    // Use cached dictionary to avoid recreating temp files
+    ({ path, cleanup } = await getCachedDictionaryPath(opts.dictionary));
+    zo = [...zo, '-D', `${path}`];
   }
 
   let d: Duplex;
@@ -188,30 +248,41 @@ export async function decompressBuffer(buffer: Buffer, opts: ZSTDOpts = {}): Pro
 export class SimpleZSTD {
   #compressQueue!: ProcessQueue<Duplex>;
   #decompressQueue!: ProcessQueue<Duplex>;
-  #bufferFileCleanup: () => void = () => null;
+  #compressDictCleanup: () => void = () => null;
+  #decompressDictCleanup: () => void = () => null;
   #ready;
+  #poolOptions?: PoolOpts;
 
-  constructor(poolOptions?: PoolOpts, dictionary?: Buffer | DictionaryObject) {
-    // Use a guard in all function to complete the async dictionary loading
-    debug('constructor', poolOptions, dictionary);
-    // po.compressQueue = po.compressQueue || {};
-    // po.decompressQueue = po.decompressQueue || {};
-
-    this.#bufferFileCleanup = () => null;
+  private constructor(poolOptions?: PoolOpts) {
+    debug('constructor', poolOptions);
+    this.#poolOptions = poolOptions;
+    this.#compressDictCleanup = () => null;
+    this.#decompressDictCleanup = () => null;
 
     this.#ready = new Promise(async (resolve, reject) => { // eslint-disable-line
-      let path: string | null = null;
-      let cleanup = null;
-
       try {
-        // Convert buffer or dictionary.path to path
-        if (dictionary && 'path' in dictionary) {
-          path = dictionary.path;
+        // Handle compress queue dictionary
+        let compressDictPath: string | undefined = undefined;
+        const compressDict = poolOptions?.compressQueue?.dictionary;
+        if (compressDict && 'path' in compressDict) {
+          compressDictPath = compressDict.path;
+        } else if (compressDict && Buffer.isBuffer(compressDict)) {
+          const { path, cleanup } = await file({ prefix: 'zstd-dict-' });
+          this.#compressDictCleanup = cleanup;
+          await writeFile(path, compressDict);
+          compressDictPath = path;
         }
-        if (dictionary && Buffer.isBuffer(dictionary)) {
-          ({ path, cleanup } = await file());
-          this.#bufferFileCleanup = cleanup;
-          await writeFile(path, dictionary);
+
+        // Handle decompress queue dictionary
+        let decompressDictPath: string | undefined = undefined;
+        const decompressDict = poolOptions?.decompressQueue?.dictionary;
+        if (decompressDict && 'path' in decompressDict) {
+          decompressDictPath = decompressDict.path;
+        } else if (decompressDict && Buffer.isBuffer(decompressDict)) {
+          const { path, cleanup } = await file({ prefix: 'zstd-dict-' });
+          this.#decompressDictCleanup = cleanup;
+          await writeFile(path, decompressDict);
+          decompressDictPath = path;
         }
 
         this.#compressQueue = new ProcessQueue(
@@ -219,10 +290,10 @@ export class SimpleZSTD {
           (() => {
             debug('compress factory');
             return CreateCompressStream(
-              poolOptions?.compressQueue?.compLevel || 3, 
+              poolOptions?.compressQueue?.compLevel || 3,
               {
                 ...poolOptions?.compressQueue,
-                dictionary: path ? { path } : undefined,
+                dictionary: compressDictPath ? { path: compressDictPath } : undefined,
               }
             );
           }),
@@ -239,7 +310,7 @@ export class SimpleZSTD {
             debug('decompress factory');
             return CreateDecompressStream({
               ...poolOptions?.decompressQueue,
-              dictionary: path ? { path } : undefined,
+              dictionary: decompressDictPath ? { path: decompressDictPath } : undefined,
             });
           }),
           async (p: Promise<Duplex>) => {
@@ -256,9 +327,22 @@ export class SimpleZSTD {
       }
     }).catch((err) => {
       debug('ready error', err);
-      this.#bufferFileCleanup();
-      this.#bufferFileCleanup = () => null;
+      this.#compressDictCleanup();
+      this.#decompressDictCleanup();
+      this.#compressDictCleanup = () => null;
+      this.#decompressDictCleanup = () => null;
     });
+  }
+
+  /**
+   * Create a new SimpleZSTD instance with process pooling
+   * @param poolOptions - Configuration for compression and decompression process pools
+   * @returns Promise resolving to initialized SimpleZSTD instance
+   */
+  static async create(poolOptions?: PoolOpts): Promise<SimpleZSTD> {
+    const instance = new SimpleZSTD(poolOptions);
+    await instance.#ready;
+    return instance;
   }
 
   get queueStats() {
@@ -277,18 +361,40 @@ export class SimpleZSTD {
   destroy() {
     this.#compressQueue.destroy();
     this.#decompressQueue.destroy();
-    this.#bufferFileCleanup();
-    this.#bufferFileCleanup = () => null;
+    this.#compressDictCleanup();
+    this.#decompressDictCleanup();
+    this.#compressDictCleanup = () => null;
+    this.#decompressDictCleanup = () => null;
   }
 
-  async compress(): Promise<Duplex> {
+  /**
+   * Get a compression stream from the pool, or create a one-off stream with custom compression level
+   * @param compLevel - Optional compression level (1-22). If provided, creates a new stream instead of using the pool
+   * @returns Promise resolving to a Duplex compression stream
+   */
+  async compress(compLevel?: number): Promise<Duplex> {
     await this.#ready;
+
+    // If custom compression level is provided, create a one-off stream
+    if (compLevel !== undefined) {
+      return CreateCompressStream(compLevel, {
+        ...this.#poolOptions?.compressQueue,
+      });
+    }
+
+    // Otherwise, acquire from pool
     return this.#compressQueue.acquire();
   }
 
-  async compressBuffer(buffer: Buffer): Promise<Buffer> {
+  /**
+   * Compress a buffer using the pool, or with a custom compression level
+   * @param buffer - Buffer to compress
+   * @param compLevel - Optional compression level (1-22). If provided, uses this level instead of pool default
+   * @returns Promise resolving to compressed buffer
+   */
+  async compressBuffer(buffer: Buffer, compLevel?: number): Promise<Buffer> {
     await this.#ready;
-    const c = await this.#compressQueue.acquire();
+    const c = await this.compress(compLevel);
     return CompressBuffer(buffer, c);
   }
 

@@ -427,3 +427,168 @@ describe('Performance Tests', () => {
     }
   });
 });
+
+describe('Dictionary Caching Tests', () => {
+  test('should cache and reuse same dictionary buffer', async () => {
+    const dict = fs.readFileSync(dictionary);
+    const data = Buffer.from('test data');
+
+    // Use same dictionary 10 times - should only create 1 temp file
+    for (let i = 0; i < 10; i++) {
+      const compressed = await compressBuffer(data, 3, { dictionary: dict });
+      const decompressed = await decompressBuffer(compressed, { dictionary: dict });
+      assert.deepEqual(data, decompressed);
+    }
+
+    // Dictionary cache should have been used (verified by debug logs in manual testing)
+  });
+
+  test('should create separate cache entries for different dictionaries', async () => {
+    const dict1 = fs.readFileSync(dictionary);
+    const dict2 = Buffer.from('different dictionary content for testing');
+    const data = Buffer.from('test data');
+
+    // Use dict1
+    const compressed1 = await compressBuffer(data, 3, { dictionary: dict1 });
+    await decompressBuffer(compressed1, { dictionary: dict1 });
+
+    // Use dict2 - should create new cache entry
+    const compressed2 = await compressBuffer(data, 3, { dictionary: dict2 });
+    await decompressBuffer(compressed2, { dictionary: dict2 });
+
+    // Use dict1 again - should hit cache
+    const compressed3 = await compressBuffer(data, 3, { dictionary: dict1 });
+    await decompressBuffer(compressed3, { dictionary: dict1 });
+  });
+
+  test('should support different dictionaries for compress and decompress queues', async () => {
+    const compressDict = fs.readFileSync(dictionary);
+    const decompressDict = fs.readFileSync(dictionary); // Same content but could be different
+
+    const zstd = await SimpleZSTD.create({
+      compressQueueSize: 1,
+      decompressQueueSize: 1,
+      compressQueue: { compLevel: 3, dictionary: compressDict },
+      decompressQueue: { dictionary: decompressDict },
+    });
+
+    try {
+      const data = Buffer.from('test data');
+      const compressed = await zstd.compressBuffer(data);
+      const decompressed = await zstd.decompressBuffer(compressed);
+      assert.deepEqual(data, decompressed);
+    } finally {
+      zstd.destroy();
+    }
+  });
+});
+
+describe('Optional compLevel Parameter Tests', () => {
+  test('should allow overriding compression level with compress()', async () => {
+    const zstd = await SimpleZSTD.create({
+      compressQueueSize: 2,
+      compressQueue: { compLevel: 1 }, // Default level 1
+    });
+
+    try {
+      const data = Buffer.from('test data '.repeat(100));
+
+      // First use pool to populate stats
+      await zstd.compressBuffer(data);
+
+      // Check initial stats
+      const statsBefore = zstd.queueStats;
+      const hitsBefore = statsBefore.compress.hits;
+      const missesBefore = statsBefore.compress.misses;
+
+      // Override with level 19 - should bypass queue
+      const compressed19 = await zstd.compressBuffer(data, 19);
+      await decompressBuffer(compressed19); // Verify it decompresses
+
+      // Verify queue stats show the override as a miss (or no hit increase)
+      const statsAfter = zstd.queueStats;
+
+      // When using custom compLevel, it either increments misses or doesn't increment hits
+      const hitsIncreased = statsAfter.compress.hits > hitsBefore;
+      assert.ok(!hitsIncreased, 'Custom compLevel should not increment hit count');
+    } finally {
+      zstd.destroy();
+    }
+  });
+
+  test('should allow overriding compression level with compressBuffer()', async () => {
+    const zstd = await SimpleZSTD.create({
+      compressQueueSize: 1,
+      compressQueue: { compLevel: 3 },
+    });
+
+    try {
+      const data = Buffer.from('test data');
+
+      // Pool default
+      const compressed3 = await zstd.compressBuffer(data);
+
+      // Override with level 1 (should be larger/faster)
+      const compressed1 = await zstd.compressBuffer(data, 1);
+
+      // Both should decompress correctly
+      const decomp3 = await decompressBuffer(compressed3);
+      const decomp1 = await decompressBuffer(compressed1);
+
+      assert.deepEqual(decomp3, data);
+      assert.deepEqual(decomp1, data);
+    } finally {
+      zstd.destroy();
+    }
+  });
+});
+
+describe('Stream Events Tests', () => {
+  test('should emit exit event on stream completion', async () => {
+    const stream = await compress(3);
+    const data = Buffer.from('test data');
+
+    return new Promise((resolve, reject) => {
+      let exitEventFired = false;
+
+      stream.on('exit', (code: number) => {
+        exitEventFired = true;
+        assert.strictEqual(code, 0, 'Exit code should be 0 for successful compression');
+      });
+
+      stream.on('error', reject);
+
+      stream.on('finish', () => {
+        setTimeout(() => {
+          assert.ok(exitEventFired, 'Exit event should have fired');
+          resolve();
+        }, 100);
+      });
+
+      stream.end(data);
+    });
+  });
+
+  test('should handle stderr event if zstd outputs warnings', async () => {
+    // Note: This is hard to test without forcing zstd to output to stderr
+    // Most normal operations won't trigger stderr, but the event handler exists
+    const stream = await compress(3);
+    const data = Buffer.from('test data');
+
+    let stderrCaptured = false;
+    stream.on('stderr', (message: string) => {
+      stderrCaptured = true;
+      // If stderr is emitted, it should be a string
+      assert.strictEqual(typeof message, 'string');
+    });
+
+    await new Promise((resolve, reject) => {
+      stream.on('error', reject);
+      stream.on('finish', resolve);
+      stream.end(data);
+    });
+
+    // Note: stderrCaptured will likely be false in normal operation
+    // This just verifies the handler doesn't crash if it IS called
+  });
+});

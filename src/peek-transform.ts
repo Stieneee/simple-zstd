@@ -1,10 +1,10 @@
-import { Duplex, pipeline } from 'node:stream';
-import type { TransformOptions } from 'node:stream';
+import { Duplex } from 'node:stream';
+import type { DuplexOptions } from 'node:stream';
 
 type SwapCallback = (err: Error | null, stream: Duplex | null) => void;
 type PeekCallback = (data: Buffer, swap: SwapCallback) => void;
 
-interface PeekOptions extends TransformOptions {
+interface PeekOptions extends DuplexOptions {
   maxBuffer?: number;
 }
 
@@ -70,7 +70,7 @@ export default class PeekPassThrough extends Duplex {
     }
   }
 
-  _read(size: number) {
+  _read(_size: number) {
     // If we have a swapped stream, resume it if paused
     if (this.#swappedStream) {
       if (this.#swappedStream.isPaused && this.#swappedStream.isPaused()) {

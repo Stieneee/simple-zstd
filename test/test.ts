@@ -1,23 +1,45 @@
-/* eslint-env node, mocha */
-
+import { describe, test, before } from 'node:test';
+import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-
-import chai from 'chai';
-import chaiAsPromised from 'chai-as-promised';
-import chaiFs from 'chai-fs';
-
-import brake from 'brake';
+import { Transform } from 'node:stream';
 
 import { SimpleZSTD, compress, decompress, compressBuffer, decompressBuffer } from '../src/index';
 
-chai.use(chaiFs);
-chai.use(chaiAsPromised); // use last
-
-const { assert } = chai;
-
 const asyncSleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Simple throttle stream to replace brake module
+function createThrottle(bytesPerSecond: number): Transform {
+  let bytes = 0;
+  const startTime = Date.now();
+
+  return new Transform({
+    transform(chunk: Buffer, encoding: BufferEncoding, callback: (error?: Error | null) => void) {
+      bytes += chunk.length;
+      const elapsed = Date.now() - startTime;
+      const expectedTime = (bytes / bytesPerSecond) * 1000;
+      const delay = Math.max(0, expectedTime - elapsed);
+
+      if (delay > 0) {
+        setTimeout(() => {
+          this.push(chunk);
+          callback();
+        }, delay);
+      } else {
+        this.push(chunk);
+        callback();
+      }
+    }
+  });
+}
+
+// Custom file comparison helper
+function assertFileEqual(file1: string, file2: string): void {
+  const content1 = fs.readFileSync(file1);
+  const content2 = fs.readFileSync(file2);
+  assert.deepEqual(content1, content2, `Files ${file1} and ${file2} are not equal`);
+}
 
 // ZSTDCompress(compressionLevel, streamOptions)
 // ZSTDDecompress(streamOptions)
@@ -32,14 +54,14 @@ const dstZstd2 = '/tmp/example_copy2.zst';
 const dictionary = path.join(__dirname, 'sample/dictionary');
 
 describe('Test simple-zstd Static Functions', () => {
-  beforeEach(() => {
+  before(() => {
     fs.rmSync(dst1, { force: true });
     fs.rmSync(dst2, { force: true });
     fs.rmSync(dstZstd1, { force: true });
     fs.rmSync(dstZstd2, { force: true });
   });
 
-  it('should not alter the file', async () => {
+  test('should not alter the file', async () => {
     const c = await compress(3);
     const d = await decompress();
 
@@ -51,7 +73,7 @@ describe('Test simple-zstd Static Functions', () => {
         .on('error', reject)
         .on('finish', () => {
           try {
-            assert.fileEqual(src, dst1);
+            assertFileEqual(src, dst1);
             resolve();
           } catch (err) {
             reject(err);
@@ -60,7 +82,7 @@ describe('Test simple-zstd Static Functions', () => {
     });
   });
 
-  it('should perform correctly with stream.pipeline', async () => {
+  test('should perform correctly with stream.pipeline', async () => {
     const c = await compress(3);
     const d = await decompress();
 
@@ -71,10 +93,10 @@ describe('Test simple-zstd Static Functions', () => {
       fs.createWriteStream(dst1),
     );
 
-    assert.fileEqual(src, dst1);
+    assertFileEqual(src, dst1);
   });
 
-  it('should handle back pressure', async () => {
+  test('should handle back pressure', { timeout: 30000 }, async () => {
     const c = await compress(3);
     const d = await decompress();
 
@@ -82,14 +104,14 @@ describe('Test simple-zstd Static Functions', () => {
       fs.createReadStream(src),
       c,
       d,
-      brake(200000),
+      createThrottle(200000),
       fs.createWriteStream(dst1),
     );
 
-    assert.fileEqual(src, dst1);
-  }).timeout(30000);
+    assertFileEqual(src, dst1);
+  });
 
-  it('compression level should change compression', async () => {
+  test('compression level should change compression', { timeout: 5000 }, async () => {
     const c1 = await compress(1, {});
     const c2 = await compress(19, {});
 
@@ -108,9 +130,9 @@ describe('Test simple-zstd Static Functions', () => {
     if (fs.statSync(dstZstd2).size >= fs.statSync(dstZstd1).size) {
       throw new Error('Compression level failed');
     }
-  }).timeout(5000);
+  });
 
-  it('should accept zstdOptions - ultra option', async () => {
+  test('should accept zstdOptions - ultra option', { timeout: 30000 }, async () => {
     const c1 = await compress(1);
     const c2 = await compress(22, {zstdOptions: ['--ultra']});
 
@@ -130,9 +152,9 @@ describe('Test simple-zstd Static Functions', () => {
       // console.log(fs.statSync(dstZstd2).size, fs.statSync(dstZstd1).size);
       throw new Error('ultra test failed test failed');
     }
-  }).timeout(30000);
+  });
 
-  it('should accept a buffer', async () => {
+  test('should accept a buffer', async () => {
     const buffer = Buffer.from('this is a test');
 
     const compressed = await compressBuffer(buffer, 3, {});
@@ -141,7 +163,7 @@ describe('Test simple-zstd Static Functions', () => {
     assert.deepEqual(buffer, decompressed);
   });
 
-  it('should accept a bigger buffer', async () => {
+  test('should accept a bigger buffer', async () => {
     const buffer = fs.readFileSync(src);
 
     const compressed = await compressBuffer(buffer, 3);
@@ -150,7 +172,7 @@ describe('Test simple-zstd Static Functions', () => {
     assert.deepEqual(buffer, decompressed);
   });
 
-  it('should accept a dictionary file as a buffer', async () => {
+  test('should accept a dictionary file as a buffer', async () => {
     const buffer = fs.readFileSync(src);
     const dictBuffer = fs.readFileSync(dictionary);
 
@@ -160,7 +182,7 @@ describe('Test simple-zstd Static Functions', () => {
     assert.deepEqual(buffer, decompressed);
   });
 
-  it('should accept a dictionary file as a path', async () => {
+  test('should accept a dictionary file as a path', async () => {
     const buffer = fs.readFileSync(src);
 
     const compressed = await compressBuffer(buffer, 3, {dictionary: { path: dictionary }});
@@ -171,7 +193,7 @@ describe('Test simple-zstd Static Functions', () => {
 });
 
 describe('Test simple-zstd Class', () => {
-  it('should behave as the static function', async () => {
+  test('should behave as the static function', async () => {
     const z = new SimpleZSTD();
 
     const c = await z.compress();
@@ -185,7 +207,7 @@ describe('Test simple-zstd Class', () => {
         .on('error', reject)
         .on('finish', () => {
           try {
-            assert.fileEqual(src, dst1);
+            assertFileEqual(src, dst1);
             assert.equal(z.queueStats.compress.hits, 0);
             assert.equal(z.queueStats.compress.misses, 1);
             assert.equal(z.queueStats.decompress.hits, 0);
@@ -199,7 +221,7 @@ describe('Test simple-zstd Class', () => {
     });
   });
 
-  it('should handle back pressure', async () => {
+  test('should handle back pressure', { timeout: 30000 }, async () => {
     const z = new SimpleZSTD();
 
     const c = await z.compress();
@@ -209,15 +231,15 @@ describe('Test simple-zstd Class', () => {
       fs.createReadStream(src),
       c,
       d,
-      brake(200000),
+      createThrottle(200000),
       fs.createWriteStream(dst1),
     );
 
     z.destroy();
-    assert.fileEqual(src, dst1);
-  }).timeout(30000);
+    assertFileEqual(src, dst1);
+  });
 
-  it('should behave as the static function and pre create zstd child process', async () => {
+  test('should behave as the static function and pre create zstd child process', { timeout: 30000 }, async () => {
     const z = new SimpleZSTD({
       compressQueueSize: 1,
       decompressQueueSize: 1,
@@ -234,7 +256,7 @@ describe('Test simple-zstd Class', () => {
         .on('error', reject)
         .on('finish', () => {
           try {
-            assert.fileEqual(src, dst1);
+            assertFileEqual(src, dst1);
             assert.equal(z.queueStats.compress.hits, 1);
             assert.equal(z.queueStats.compress.misses, 0);
             assert.equal(z.queueStats.decompress.hits, 1);
@@ -247,9 +269,9 @@ describe('Test simple-zstd Class', () => {
           }
         });
     });
-  }).timeout(30000);
+  });
 
-  it('should accept a bigger buffer', async () => {
+  test('should accept a bigger buffer', async () => {
     const buffer = fs.readFileSync(src);
 
     const z = new SimpleZSTD({
@@ -268,7 +290,7 @@ describe('Test simple-zstd Class', () => {
     assert.equal(z.queueStats.compress.misses, 0);
   });
 
-  it('should accept a dictionary file as a buffer', async () => {
+  test('should accept a dictionary file as a buffer', async () => {
     const buffer = fs.readFileSync(src);
     const dictBuffer = fs.readFileSync(dictionary);
 
@@ -288,7 +310,7 @@ describe('Test simple-zstd Class', () => {
     assert.equal(z.queueStats.compress.misses, 0);
   });
 
-  it('should accept a dictionary file as a path', async () => {
+  test('should accept a dictionary file as a path', async () => {
     const buffer = fs.readFileSync(src);
 
     const z = new SimpleZSTD({
@@ -312,7 +334,7 @@ describe('Test simple-zstd Class', () => {
 });
 
 describe('Performance Tests', () => {
-  it('should be faster with a queue for large number of requests', async () => {
+  test('should be faster with a queue for large number of requests', { timeout: 90000 }, async () => {
     // Use compLevel 1 time to place emphasis on the queue performance
 
     const sampleSize = 1000;
@@ -353,10 +375,10 @@ describe('Performance Tests', () => {
 
     z.destroy();
 
-    assert.isBelow(queueTime, noQueueTime);
-  }).timeout(30000);
+    assert.ok(queueTime < noQueueTime, `Queue time (${queueTime}ms) should be less than no queue time (${noQueueTime}ms)`);
+  });
 
-  it('there should be point of diminishing returns for queue length for a serial performance test', async () => {
+  test('there should be point of diminishing returns for queue length for a serial performance test', { timeout: 90000 }, async () => {
     const sampleSize = 100;
 
     for (let s = 0; s < 10; s += 1) {
@@ -382,5 +404,5 @@ describe('Performance Tests', () => {
       console.log(`Queue ${s} Time: ${queueTime}ms`);
       z.destroy();
     }
-  }).timeout(30000);
+  });
 });

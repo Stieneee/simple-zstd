@@ -17,6 +17,8 @@ export default class ProcessQueue<QueueItem> {
 
   #missCount;
 
+  #destroyed: boolean;
+
   constructor(targetSize: number, factory: () => Promise<QueueItem>, destroy: (process: Promise<QueueItem>) => void) {
     debug('constructor', targetSize);
     this.#targetSize = targetSize;
@@ -26,6 +28,7 @@ export default class ProcessQueue<QueueItem> {
 
     this.#hitCount = 0;
     this.#missCount = 0;
+    this.#destroyed = false;
 
     for (let i = 0; i < targetSize || 0; i += 1) {
       this.#createResource();
@@ -42,6 +45,10 @@ export default class ProcessQueue<QueueItem> {
 
   async #createResource() {
     debug('createResource?', this.#queue.length);
+    if (this.#destroyed) {
+      debug('createResource skipped - queue destroyed');
+      return;
+    }
     if (this.#queue.length < this.#targetSize ) {
       debug('createResource call factory');
       this.#queue.push(this.#factory());
@@ -54,9 +61,11 @@ export default class ProcessQueue<QueueItem> {
 
     if (attempt) {
       debug('acquire hit');
-      setImmediate(() => {
-        this.#createResource();
-      });
+      if (!this.#destroyed) {
+        setImmediate(() => {
+          this.#createResource();
+        });
+      }
       this.#hitCount += 1;
       return attempt;
     }
@@ -68,6 +77,7 @@ export default class ProcessQueue<QueueItem> {
 
   async destroy() {
     debug('destroy', this.#queue.length);
+    this.#destroyed = true;
     const destroyPromises: Promise<void>[] = [];
     while (this.#queue.length > 0) {
       const p = this.#queue.pop();

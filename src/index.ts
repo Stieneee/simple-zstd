@@ -23,13 +23,13 @@ let bin: string;
 try {
   bin = execSync(find, { env: process.env }).toString().replace(/\n$/, '').replace(/\r$/, '');
   debug(bin);
-} catch (err) {
+} catch {
   throw new Error('Can not access zstd! Is it installed?');
 }
 
 try {
   fs.accessSync(bin, fs.constants.X_OK);
-} catch (err) {
+} catch {
   throw new Error('zstd is not executable');
 }
 
@@ -44,11 +44,11 @@ async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<
 
   // Dictionary
   if (opts.dictionary && 'path' in opts.dictionary) {
-    zo = [...zo, '-D', `${opts.dictionary?.path}`]; //eslint-disable-line
+    zo = [...zo, '-D', `${opts.dictionary?.path}`];  
   } else if (Buffer.isBuffer(opts.dictionary)) {
     ({ path, cleanup } = await file());
     await writeFile(path, opts.dictionary);
-    zo = [...zo, '-D', `${path}`]; //eslint-disable-line
+    zo = [...zo, '-D', `${path}`];  
   }
 
   let c: Duplex;
@@ -104,11 +104,11 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
   let terminate = false;
 
   if (opts.dictionary && 'path' in opts.dictionary) {
-    zo = [...zo, '-D', `${opts.dictionary.path}`]; //eslint-disable-line
+    zo = [...zo, '-D', `${opts.dictionary.path}`];  
   } else if (Buffer.isBuffer(opts.dictionary)) {
     ({ path, cleanup } = await file());
     await writeFile(path, opts.dictionary);
-    zo = [...zo, '-D', `${path}`]; //eslint-disable-line
+    zo = [...zo, '-D', `${path}`];  
   }
 
   let d: Duplex;

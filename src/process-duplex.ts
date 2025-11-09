@@ -1,6 +1,6 @@
 import { Duplex } from 'node:stream';
 import { spawn, ChildProcess, SpawnOptions } from 'node:child_process';
-import type { TransformOptions } from 'node:stream';
+import type { DuplexOptions } from 'node:stream';
 
 export default class ProcessDuplex extends Duplex {
   #process: ChildProcess;
@@ -9,7 +9,7 @@ export default class ProcessDuplex extends Duplex {
     command: string,
     args: string[],
     spawnOptions?: SpawnOptions,
-    streamOptions?: TransformOptions,
+    streamOptions?: DuplexOptions,
   ) {
     super(streamOptions);
 
@@ -59,7 +59,7 @@ export default class ProcessDuplex extends Duplex {
     });
   }
 
-  _read(size: number) {
+  _read(_size: number) {
     // Resume stdout if it was paused
     if (this.#process.stdout && this.#process.stdout.isPaused()) {
       this.#process.stdout.resume();

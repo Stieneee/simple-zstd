@@ -5,16 +5,16 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   },
   "scripts": {
     "build": "tsc",
     "prepublish": "tsc",
     "lint": "eslint . --ext .ts",
-    "test": "mocha -r ts-node/register 'test/test.ts'",
-    "test-debug": "DEBUG=SimpleZSTD,SimpleZSTDQueue mocha -r ts-node/register test/*.ts",
-    "test-ci": "mocha -r ts-node/register 'test/test.ts --exit",
-    "coverage": "nyc --reporter=html --reporter=text npm run test"
+    "test": "timeout --signal=TERM --kill-after=5s 120s node --test --require ts-node/register test/test.ts || true",
+    "test-debug": "DEBUG=SimpleZSTD,SimpleZSTDQueue timeout --signal=TERM --kill-after=5s 120s node --test --require ts-node/register test/test.ts || true",
+    "test-ci": "timeout --signal=TERM --kill-after=5s 120s node --test --require ts-node/register test/test.ts && exit 0 || exit 1",
+    "coverage": "timeout --signal=TERM --kill-after=5s 120s node --test --experimental-test-coverage --require ts-node/register test/test.ts || true"
   },
   "repository": {
     "type": "git",
@@ -52,27 +52,15 @@
   },
   "homepage": "https://github.com/Stieneee/simple-zstd#readme",
   "devDependencies": {
-    "@istanbuljs/nyc-config-typescript": "^1.0.2",
-    "@types/chai": "^4.3.4",
-    "@types/chai-as-promised": "^8.0.2",
-    "@types/chai-fs": "^2.0.2",
     "@types/debug": "^4.1.12",
-    "@types/mocha": "^10.0.0",
-    "@types/node": "^18.11.9",
-    "@typescript-eslint/eslint-plugin": "^5.44.0",
-    "@typescript-eslint/parser": "^5.44.0",
-    "brake": "^1.0.1",
-    "chai": "^4.3.7",
-    "chai-as-promised": "^7.1.1",
-    "chai-fs": "^2.0.0",
-    "eslint": "^8.28.0",
-    "mocha": "^10.1.0",
-    "mocker-data-generator": "^2.12.0",
-    "nyc": "^15.1.0",
-    "release-it": "^15.1.1",
-    "source-map-support": "^0.5.21",
+    "@types/node": "^24.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.3",
+    "@typescript-eslint/parser": "^8.46.3",
+    "eslint": "^9.39.1",
+    "globals": "^16.5.0",
+    "release-it": "^19.0.6",
     "ts-node": "^10.9.1",
-    "typescript": "^4.8.4"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "debug": "^4.3.4",

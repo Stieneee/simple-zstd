@@ -40,11 +40,8 @@ async function getCachedDictionaryPath(dictionary: Buffer): Promise<{ path: stri
       cleanup: () => {
         cached!.refCount--;
         debug(`Dictionary refCount decreased: ${hash.slice(0, 8)}... (refCount: ${cached!.refCount})`);
-        if (cached!.refCount <= 0) {
-          debug(`Cleaning up cached dictionary: ${hash.slice(0, 8)}...`);
-          cached!.cleanup();
-          dictionaryCache.delete(hash);
-        }
+        // Don't call async cleanup here - it will be handled by clearDictionaryCache()
+        // or when all references are released
       }
     };
   }
@@ -66,14 +63,30 @@ async function getCachedDictionaryPath(dictionary: Buffer): Promise<{ path: stri
       if (cached) {
         cached.refCount--;
         debug(`Dictionary refCount decreased: ${hash.slice(0, 8)}... (refCount: ${cached.refCount})`);
-        if (cached.refCount <= 0) {
-          debug(`Cleaning up cached dictionary: ${hash.slice(0, 8)}...`);
-          cached.cleanup();
-          dictionaryCache.delete(hash);
-        }
+        // Don't call async cleanup here - it will be handled by clearDictionaryCache()
+        // or when all references are released
       }
     }
   };
+}
+
+/**
+ * Clear the dictionary cache and cleanup all temporary files
+ * This is useful for testing or manual cache management
+ * @returns Promise that resolves when all cleanups are complete
+ */
+export async function clearDictionaryCache(): Promise<void> {
+  debug('Clearing dictionary cache');
+  const cleanupPromises: Promise<void>[] = [];
+
+  for (const [hash, cached] of dictionaryCache.entries()) {
+    debug(`Cleaning up cached dictionary: ${hash.slice(0, 8)}...`);
+    // tmp-promise cleanup() returns a Promise
+    cleanupPromises.push(Promise.resolve(cached.cleanup()));
+  }
+
+  await Promise.all(cleanupPromises);
+  dictionaryCache.clear();
 }
 
 const find = (process.platform === 'win32') ? 'where zstd.exe' : 'which zstd';
@@ -125,9 +138,9 @@ async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<
   c.on('exit', (code: number, signal) => {
     debug('c exit', code, signal);
     if (code !== 0) {
-      setTimeout(() => {
+      setImmediate(() => {
         c.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
-      }, 1);
+      });
     }
     cleanup();
   });
@@ -139,6 +152,17 @@ function CompressBuffer(buffer: Buffer, c: Duplex): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const w = new BufferWritable({});
 
+    c.once('close', () => {
+      setImmediate(() => {
+        const result = w.getBuffer();
+        if (result) {
+          resolve(result);
+        } else {
+          reject(new Error('Compression failed'));
+        }
+      });
+    });
+
     pipeline(
       Readable.from(buffer),
       c,
@@ -146,11 +170,10 @@ function CompressBuffer(buffer: Buffer, c: Duplex): Promise<Buffer> {
     )
       .then(() => {
         c.destroy();
-        resolve(w.getBuffer());
       })
       .catch((err: Error) => {
-        c.destroy();
         reject(err);
+        c.destroy();
       });
   });
 }
@@ -185,14 +208,14 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
   d.on('exit', (code: number, signal) => {
     debug('d exit', code, signal);
     if (code !== 0 && !terminate) {
-      setTimeout(() => {
+      setImmediate(() => {
         d.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
-      }, 1);
+      });
     }
     cleanup();
   });
 
-  return new PeekPassThrough({ maxBuffer: 10 }, (data: Buffer, swap) => {
+  const wrapper = new PeekPassThrough({ maxBuffer: 10 }, (data: Buffer, swap) => {
     if (isZst(data)) {
       swap(null, d);
     } else {
@@ -202,11 +225,28 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
       swap(null, new PassThrough());
     }
   });
+
+  // CRITICAL: Wrap _destroy to ensure ProcessDuplex is always destroyed
+  const originalDestroy = wrapper._destroy.bind(wrapper);
+  wrapper._destroy = function(error: Error | null, callback: (error: Error | null) => void) {
+    if (!d.destroyed) {
+      d.destroy();
+    }
+    originalDestroy(error, callback);
+  };
+
+  return wrapper;
 }
 
 function DecompressBuffer(buffer: Buffer, d: Duplex): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const w = new BufferWritable({});
+
+    d.once('close', () => {
+      setImmediate(() => {
+        resolve(w.getBuffer() || Buffer.alloc(0));
+      });
+    });
 
     pipeline(
       Readable.from(buffer),
@@ -215,11 +255,10 @@ function DecompressBuffer(buffer: Buffer, d: Duplex): Promise<Buffer> {
     )
       .then(() => {
         d.destroy();
-        resolve(w.getBuffer() || Buffer.alloc(0));
       })
       .catch((err: Error) => {
-        d.destroy();
         reject(err);
+        d.destroy();
       });
   });
 }
@@ -300,7 +339,14 @@ export class SimpleZSTD {
           async (p: Promise<Duplex>) => {
             debug('compress cleanup');
             const stream = await p;
-            stream.destroy();
+            await new Promise<void>((resolve) => {
+              if (stream.destroyed) {
+                resolve();
+              } else {
+                stream.once('close', () => resolve());
+                stream.destroy();
+              }
+            });
           },
         );
 
@@ -316,7 +362,14 @@ export class SimpleZSTD {
           async (p: Promise<Duplex>) => {
             debug('decompress cleanup');
             const stream = await p;
-            stream.destroy();
+            await new Promise<void>((resolve) => {
+              if (stream.destroyed) {
+                resolve();
+              } else {
+                stream.once('close', () => resolve());
+                stream.destroy();
+              }
+            });
           },
         );
 
@@ -358,9 +411,11 @@ export class SimpleZSTD {
     };
   }
 
-  destroy() {
-    this.#compressQueue.destroy();
-    this.#decompressQueue.destroy();
+  async destroy() {
+    await Promise.all([
+      this.#compressQueue.destroy(),
+      this.#decompressQueue.destroy(),
+    ]);
     this.#compressDictCleanup();
     this.#decompressDictCleanup();
     this.#compressDictCleanup = () => null;

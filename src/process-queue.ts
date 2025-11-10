@@ -63,7 +63,10 @@ export default class ProcessQueue<QueueItem> {
       debug('acquire hit');
       if (!this.#destroyed) {
         setImmediate(() => {
-          this.#createResource();
+          // Double-check destroyed flag in case it changed
+          if (!this.#destroyed) {
+            this.#createResource();
+          }
         });
       }
       this.#hitCount += 1;

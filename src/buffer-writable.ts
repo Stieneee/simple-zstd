@@ -13,7 +13,7 @@ export default class BufferWritable extends Writable {
     callback();
   }
 
-  _writev(chunks: Array<{ chunk: Buffer, encoding: string }>, callback: () => void = () => null) {
+  _writev(chunks: Array<{ chunk: Buffer; encoding: string }>, callback: () => void = () => null) {
     for (const { chunk } of chunks) {
       this.#buf.push(chunk);
     }

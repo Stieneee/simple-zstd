@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
 import globals from 'globals';
+import prettierConfig from 'eslint-config-prettier';
 
 export default [
   js.configs.recommended,
@@ -44,4 +45,5 @@ export default [
   {
     ignores: ['node_modules', 'dist'],
   },
+  prettierConfig,
 ];

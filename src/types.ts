@@ -1,26 +1,26 @@
-import {SpawnOptions} from 'child_process';
-import {DuplexOptions} from 'stream';
+import { SpawnOptions } from 'child_process';
+import { DuplexOptions } from 'stream';
 
 export interface CompressOpts {
-  compLevel?: number,
-  dictionary?: Buffer | { path: string },
-  zstdOptions?: Array<string>,
-  spawnOptions?: SpawnOptions,
-  streamOptions?: DuplexOptions,
+  compLevel?: number;
+  dictionary?: Buffer | { path: string };
+  zstdOptions?: Array<string>;
+  spawnOptions?: SpawnOptions;
+  streamOptions?: DuplexOptions;
 }
 
 export interface DecompressOpts {
-  dictionary?: Buffer | { path: string },
-  zstdOptions?: Array<string>,
-  spawnOptions?: SpawnOptions,
-  streamOptions?: DuplexOptions,
+  dictionary?: Buffer | { path: string };
+  zstdOptions?: Array<string>;
+  spawnOptions?: SpawnOptions;
+  streamOptions?: DuplexOptions;
 }
 
 export interface PoolOpts {
-  compressQueueSize?: number,
-  decompressQueueSize?: number,
-  compressQueue?: CompressOpts,
-  decompressQueue?: DecompressOpts,
+  compressQueueSize?: number;
+  decompressQueueSize?: number;
+  compressQueue?: CompressOpts;
+  decompressQueue?: DecompressOpts;
 }
 
 export interface DictionaryObject {

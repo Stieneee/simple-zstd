@@ -16,7 +16,7 @@ export default class ProcessDuplex extends Duplex {
     command: string,
     args: string[],
     spawnOptions?: SpawnOptions,
-    streamOptions?: DuplexOptions,
+    streamOptions?: DuplexOptions
   ) {
     super(streamOptions);
 
@@ -106,10 +106,14 @@ export default class ProcessDuplex extends Duplex {
   _destroy(error: Error | null, callback: (error: Error | null) => void) {
     // Remove all event listeners to prevent memory leaks
     if (this.#process.stdout) {
-      if (this.#stdoutDataHandler) this.#process.stdout.removeListener('data', this.#stdoutDataHandler);
-      if (this.#stdoutEndHandler) this.#process.stdout.removeListener('end', this.#stdoutEndHandler);
-      if (this.#stdoutErrorHandler) this.#process.stdout.removeListener('error', this.#stdoutErrorHandler);
-      if (this.#stdoutCloseHandler) this.#process.stdout.removeListener('close', this.#stdoutCloseHandler);
+      if (this.#stdoutDataHandler)
+        this.#process.stdout.removeListener('data', this.#stdoutDataHandler);
+      if (this.#stdoutEndHandler)
+        this.#process.stdout.removeListener('end', this.#stdoutEndHandler);
+      if (this.#stdoutErrorHandler)
+        this.#process.stdout.removeListener('error', this.#stdoutErrorHandler);
+      if (this.#stdoutCloseHandler)
+        this.#process.stdout.removeListener('close', this.#stdoutCloseHandler);
     }
 
     if (this.#process.stderr && this.#stderrDataHandler) {

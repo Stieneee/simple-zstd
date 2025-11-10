@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { execSync } from 'node:child_process';
 
 import isZst from 'is-zst';
-import {file} from 'tmp-promise';
+import { file } from 'tmp-promise';
 import Debug from 'debug';
 
 const debug = Debug('SimpleZSTD');
@@ -28,7 +28,9 @@ function hashBuffer(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
-async function getCachedDictionaryPath(dictionary: Buffer): Promise<{ path: string; cleanup: () => void }> {
+async function getCachedDictionaryPath(
+  dictionary: Buffer
+): Promise<{ path: string; cleanup: () => void }> {
   const hash = hashBuffer(dictionary);
 
   let cached = dictionaryCache.get(hash);
@@ -39,10 +41,12 @@ async function getCachedDictionaryPath(dictionary: Buffer): Promise<{ path: stri
       path: cached.path,
       cleanup: () => {
         cached!.refCount--;
-        debug(`Dictionary refCount decreased: ${hash.slice(0, 8)}... (refCount: ${cached!.refCount})`);
+        debug(
+          `Dictionary refCount decreased: ${hash.slice(0, 8)}... (refCount: ${cached!.refCount})`
+        );
         // Don't call async cleanup here - it will be handled by clearDictionaryCache()
         // or when all references are released
-      }
+      },
     };
   }
 
@@ -53,7 +57,7 @@ async function getCachedDictionaryPath(dictionary: Buffer): Promise<{ path: stri
   dictionaryCache.set(hash, {
     path,
     cleanup: tmpCleanup,
-    refCount: 1
+    refCount: 1,
   });
 
   return {
@@ -62,11 +66,13 @@ async function getCachedDictionaryPath(dictionary: Buffer): Promise<{ path: stri
       const cached = dictionaryCache.get(hash);
       if (cached) {
         cached.refCount--;
-        debug(`Dictionary refCount decreased: ${hash.slice(0, 8)}... (refCount: ${cached.refCount})`);
+        debug(
+          `Dictionary refCount decreased: ${hash.slice(0, 8)}... (refCount: ${cached.refCount})`
+        );
         // Don't call async cleanup here - it will be handled by clearDictionaryCache()
         // or when all references are released
       }
-    }
+    },
   };
 }
 
@@ -89,7 +95,7 @@ export async function clearDictionaryCache(): Promise<void> {
   dictionaryCache.clear();
 }
 
-const find = (process.platform === 'win32') ? 'where zstd.exe' : 'which zstd';
+const find = process.platform === 'win32' ? 'where zstd.exe' : 'which zstd';
 
 let bin: string;
 
@@ -163,11 +169,7 @@ function CompressBuffer(buffer: Buffer, c: Duplex): Promise<Buffer> {
       });
     });
 
-    pipeline(
-      Readable.from(buffer),
-      c,
-      w,
-    )
+    pipeline(Readable.from(buffer), c, w)
       .then(() => {
         c.destroy();
       })
@@ -228,7 +230,7 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
 
   // CRITICAL: Wrap _destroy to ensure ProcessDuplex is always destroyed
   const originalDestroy = wrapper._destroy.bind(wrapper);
-  wrapper._destroy = function(error: Error | null, callback: (error: Error | null) => void) {
+  wrapper._destroy = function (error: Error | null, callback: (error: Error | null) => void) {
     if (!d.destroyed) {
       d.destroy();
     }
@@ -248,11 +250,7 @@ function DecompressBuffer(buffer: Buffer, d: Duplex): Promise<Buffer> {
       });
     });
 
-    pipeline(
-      Readable.from(buffer),
-      d,
-      w,
-    )
+    pipeline(Readable.from(buffer), d, w)
       .then(() => {
         d.destroy();
       })
@@ -269,7 +267,11 @@ export function compress(compLevel: number, opts: ZSTDOpts = {}): Promise<Duplex
   return CreateCompressStream(compLevel, opts);
 }
 
-export async function compressBuffer(buffer: Buffer, compLevel: number, opts: ZSTDOpts = {}): Promise<Buffer> {
+export async function compressBuffer(
+  buffer: Buffer,
+  compLevel: number,
+  opts: ZSTDOpts = {}
+): Promise<Buffer> {
   const c = await CreateCompressStream(compLevel, opts);
   return CompressBuffer(buffer, c);
 }
@@ -298,86 +300,85 @@ export class SimpleZSTD {
     this.#compressDictCleanup = () => null;
     this.#decompressDictCleanup = () => null;
 
-    this.#ready = new Promise(async (resolve, reject) => { // eslint-disable-line
-      try {
-        // Handle compress queue dictionary
-        let compressDictPath: string | undefined = undefined;
-        const compressDict = poolOptions?.compressQueue?.dictionary;
-        if (compressDict && 'path' in compressDict) {
-          compressDictPath = compressDict.path;
-        } else if (compressDict && Buffer.isBuffer(compressDict)) {
-          const { path, cleanup } = await file({ prefix: 'zstd-dict-' });
-          this.#compressDictCleanup = cleanup;
-          await writeFile(path, compressDict);
-          compressDictPath = path;
-        }
+    this.#ready = new Promise((resolve, reject) => {
+      (async () => {
+        try {
+          // Handle compress queue dictionary
+          let compressDictPath: string | undefined = undefined;
+          const compressDict = poolOptions?.compressQueue?.dictionary;
+          if (compressDict && 'path' in compressDict) {
+            compressDictPath = compressDict.path;
+          } else if (compressDict && Buffer.isBuffer(compressDict)) {
+            const { path, cleanup } = await file({ prefix: 'zstd-dict-' });
+            this.#compressDictCleanup = cleanup;
+            await writeFile(path, compressDict);
+            compressDictPath = path;
+          }
 
-        // Handle decompress queue dictionary
-        let decompressDictPath: string | undefined = undefined;
-        const decompressDict = poolOptions?.decompressQueue?.dictionary;
-        if (decompressDict && 'path' in decompressDict) {
-          decompressDictPath = decompressDict.path;
-        } else if (decompressDict && Buffer.isBuffer(decompressDict)) {
-          const { path, cleanup } = await file({ prefix: 'zstd-dict-' });
-          this.#decompressDictCleanup = cleanup;
-          await writeFile(path, decompressDict);
-          decompressDictPath = path;
-        }
+          // Handle decompress queue dictionary
+          let decompressDictPath: string | undefined = undefined;
+          const decompressDict = poolOptions?.decompressQueue?.dictionary;
+          if (decompressDict && 'path' in decompressDict) {
+            decompressDictPath = decompressDict.path;
+          } else if (decompressDict && Buffer.isBuffer(decompressDict)) {
+            const { path, cleanup } = await file({ prefix: 'zstd-dict-' });
+            this.#decompressDictCleanup = cleanup;
+            await writeFile(path, decompressDict);
+            decompressDictPath = path;
+          }
 
-        this.#compressQueue = new ProcessQueue(
-          poolOptions?.compressQueueSize || 0,
-          (() => {
-            debug('compress factory');
-            return CreateCompressStream(
-              poolOptions?.compressQueue?.compLevel || 3,
-              {
+          this.#compressQueue = new ProcessQueue(
+            poolOptions?.compressQueueSize || 0,
+            () => {
+              debug('compress factory');
+              return CreateCompressStream(poolOptions?.compressQueue?.compLevel || 3, {
                 ...poolOptions?.compressQueue,
                 dictionary: compressDictPath ? { path: compressDictPath } : undefined,
-              }
-            );
-          }),
-          async (p: Promise<Duplex>) => {
-            debug('compress cleanup');
-            const stream = await p;
-            await new Promise<void>((resolve) => {
-              if (stream.destroyed) {
-                resolve();
-              } else {
-                stream.once('close', () => resolve());
-                stream.destroy();
-              }
-            });
-          },
-        );
+              });
+            },
+            async (p: Promise<Duplex>) => {
+              debug('compress cleanup');
+              const stream = await p;
+              await new Promise<void>((resolve) => {
+                if (stream.destroyed) {
+                  resolve();
+                } else {
+                  stream.once('close', () => resolve());
+                  stream.destroy();
+                }
+              });
+            }
+          );
 
-        this.#decompressQueue = new ProcessQueue(
-          poolOptions?.decompressQueueSize || 0,
-          (() => {
-            debug('decompress factory');
-            return CreateDecompressStream({
-              ...poolOptions?.decompressQueue,
-              dictionary: decompressDictPath ? { path: decompressDictPath } : undefined,
-            });
-          }),
-          async (p: Promise<Duplex>) => {
-            debug('decompress cleanup');
-            const stream = await p;
-            await new Promise<void>((resolve) => {
-              if (stream.destroyed) {
-                resolve();
-              } else {
-                stream.once('close', () => resolve());
-                stream.destroy();
-              }
-            });
-          },
-        );
+          this.#decompressQueue = new ProcessQueue(
+            poolOptions?.decompressQueueSize || 0,
+            () => {
+              debug('decompress factory');
+              return CreateDecompressStream({
+                ...poolOptions?.decompressQueue,
+                dictionary: decompressDictPath ? { path: decompressDictPath } : undefined,
+              });
+            },
+            async (p: Promise<Duplex>) => {
+              debug('decompress cleanup');
+              const stream = await p;
+              await new Promise<void>((resolve) => {
+                if (stream.destroyed) {
+                  resolve();
+                } else {
+                  stream.once('close', () => resolve());
+                  stream.destroy();
+                }
+              });
+            }
+          );
 
-        debug('READY');
-        resolve(null);
-      } catch (err) {
-        reject(err);
-      }
+          debug('READY');
+          resolve(null);
+        } catch (err) {
+          reject(err);
+        }
+      })();
     }).catch((err) => {
       debug('ready error', err);
       this.#compressDictCleanup();
@@ -412,10 +413,7 @@ export class SimpleZSTD {
   }
 
   async destroy() {
-    await Promise.all([
-      this.#compressQueue.destroy(),
-      this.#decompressQueue.destroy(),
-    ]);
+    await Promise.all([this.#compressQueue.destroy(), this.#decompressQueue.destroy()]);
     this.#compressDictCleanup();
     this.#decompressDictCleanup();
     this.#compressDictCleanup = () => null;

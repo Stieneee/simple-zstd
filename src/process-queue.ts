@@ -19,7 +19,11 @@ export default class ProcessQueue<QueueItem> {
 
   #destroyed: boolean;
 
-  constructor(targetSize: number, factory: () => Promise<QueueItem>, destroy: (process: Promise<QueueItem>) => void) {
+  constructor(
+    targetSize: number,
+    factory: () => Promise<QueueItem>,
+    destroy: (process: Promise<QueueItem>) => void
+  ) {
     debug('constructor', targetSize);
     this.#targetSize = targetSize;
     this.#queue = [];
@@ -49,7 +53,7 @@ export default class ProcessQueue<QueueItem> {
       debug('createResource skipped - queue destroyed');
       return;
     }
-    if (this.#queue.length < this.#targetSize ) {
+    if (this.#queue.length < this.#targetSize) {
       debug('createResource call factory');
       this.#queue.push(this.#factory());
     }

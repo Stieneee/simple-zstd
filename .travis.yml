@@ -1,9 +1,0 @@
-dist: xenial
-addons:
-  apt:
-    packages:
-      - zstd
-language: node_js
-node_js:
-  - "lts/*"
-  - "node"

@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "build": "tsc",
@@ -54,6 +54,7 @@
   },
   "homepage": "https://github.com/Stieneee/simple-zstd#readme",
   "devDependencies": {
+    "@release-it/conventional-changelog": "^10.0.1",
     "@types/debug": "^4.1.12",
     "@types/node": "^24.10.0",
     "@typescript-eslint/eslint-plugin": "^8.46.3",

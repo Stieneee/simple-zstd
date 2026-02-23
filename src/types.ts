@@ -16,6 +16,13 @@ export interface DecompressOpts {
   streamOptions?: DuplexOptions;
 }
 
+export interface CreateDictionaryOpts {
+  trainingFiles: Array<string | Buffer>;
+  maxDictSize?: number;
+  zstdOptions?: string[];
+  spawnOptions?: SpawnOptions;
+}
+
 export interface PoolOpts {
   compressQueueSize?: number;
   decompressQueueSize?: number;

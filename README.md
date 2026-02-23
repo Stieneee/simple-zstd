@@ -16,7 +16,7 @@ simple-zstd is a lightweight wrapper around the system-installed zstd binary, in
 - **Promise-Based**: All operations return promises for modern async/await patterns
 - **Stream & Buffer**: Support for both streaming and buffer-based compression/decompression
 - **Smart Decompression**: Automatic detection and passthrough of non-compressed data
-- **Dictionary Support**: Use compression dictionaries via Buffer or file path
+- **Dictionary Support**: Create and use compression dictionaries via Buffer or file path
 - **Process Pooling**: Pre-spawn child processes for latency-sensitive applications
 - **Node.js 18+**: Built on modern Node.js features
 
@@ -87,6 +87,13 @@ interface PoolOpts {
     streamOptions?: DuplexOptions;
   };
 }
+
+interface CreateDictionaryOpts {
+  trainingFiles: Array<string | Buffer>; // Training corpus as file paths and/or in-memory Buffers
+  maxDictSize?: number; // Optional max dictionary size in bytes
+  zstdOptions?: string[]; // Additional zstd options for dictionary training
+  spawnOptions?: SpawnOptions; // Node.js child_process spawn options
+}
 ```
 
 ### Static Functions
@@ -95,6 +102,7 @@ interface PoolOpts {
 // Compression
 compress(compLevel: number, opts?: ZSTDOpts): Promise<Duplex>
 compressBuffer(buffer: Buffer, compLevel: number, opts?: ZSTDOpts): Promise<Buffer>
+createDictionary(opts: CreateDictionaryOpts): Promise<Buffer>
 
 // Decompression (with automatic passthrough for non-compressed data)
 decompress(opts?: ZSTDOpts): Promise<Duplex>
@@ -321,7 +329,36 @@ for (let i = 0; i < 1000; i++) {
 // Temp file is automatically cleaned up when no longer referenced
 ```
 
-### Example 6: Smart Decompression (Auto-detect)
+### Example 6: Creating a Dictionary from Training Files
+
+```typescript
+import path from "node:path";
+import { createDictionary, compressBuffer, decompressBuffer } from "simple-zstd";
+
+async function trainAndUseDictionary() {
+  const trainingFiles = [
+    path.join("sample", "training-files", "user-0.json"),
+    path.join("sample", "training-files", "user-1.json"),
+    path.join("sample", "training-files", "user-2.json"),
+    Buffer.from('{"event":"user-signup","country":"Canada"}'),
+  ];
+
+  const dictionary = await createDictionary({
+    trainingFiles,
+    maxDictSize: 112640,
+  });
+
+  const payload = Buffer.from('{"event":"user-login","country":"Canada"}');
+  const compressed = await compressBuffer(payload, 3, { dictionary });
+  const decompressed = await decompressBuffer(compressed, { dictionary });
+
+  console.log(decompressed.toString()); // {"event":"user-login","country":"Canada"}
+}
+
+trainAndUseDictionary().catch(console.error);
+```
+
+### Example 7: Smart Decompression (Auto-detect)
 
 The decompression functions automatically detect if data is zstd-compressed and pass through uncompressed data unchanged.
 

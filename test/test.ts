@@ -11,6 +11,7 @@ import {
   decompress,
   compressBuffer,
   decompressBuffer,
+  createDictionary,
   clearDictionaryCache,
 } from '../src/index';
 
@@ -499,6 +500,97 @@ describe('Dictionary Caching Tests', () => {
     } finally {
       await zstd.destroy();
     }
+  });
+});
+
+describe('Dictionary Creation Tests', () => {
+  const trainingDirectory = path.join(__dirname, 'sample/training-files');
+
+  test('should create a dictionary buffer from training files', async () => {
+    const trainingFiles = fs
+      .readdirSync(trainingDirectory)
+      .filter((entry) => entry.endsWith('.json'))
+      .slice(0, 50)
+      .map((entry) => path.join(trainingDirectory, entry));
+
+    const dictionaryBuffer = await createDictionary({
+      trainingFiles,
+      maxDictSize: 112640,
+    });
+
+    assert.ok(Buffer.isBuffer(dictionaryBuffer));
+    assert.ok(dictionaryBuffer.length > 0);
+  });
+
+  test('should use created dictionary for compress/decompress round trip', async () => {
+    const trainingFiles = fs
+      .readdirSync(trainingDirectory)
+      .filter((entry) => entry.endsWith('.json'))
+      .slice(0, 75)
+      .map((entry) => path.join(trainingDirectory, entry));
+
+    const dictionaryBuffer = await createDictionary({ trainingFiles });
+    const samplePayload = fs.readFileSync(path.join(trainingDirectory, 'user-149.json'));
+
+    const compressed = await compressBuffer(samplePayload, 3, {
+      dictionary: dictionaryBuffer,
+    });
+    const decompressed = await decompressBuffer(compressed, {
+      dictionary: dictionaryBuffer,
+    });
+
+    assert.deepEqual(decompressed, samplePayload);
+  });
+
+  test('should create a dictionary from training buffers', async () => {
+    const trainingBuffers = fs
+      .readdirSync(trainingDirectory)
+      .filter((entry) => entry.endsWith('.json'))
+      .slice(0, 40)
+      .map((entry) => fs.readFileSync(path.join(trainingDirectory, entry)));
+
+    const dictionaryBuffer = await createDictionary({
+      trainingFiles: trainingBuffers,
+      maxDictSize: 65536,
+    });
+
+    const samplePayload = fs.readFileSync(path.join(trainingDirectory, 'user-120.json'));
+    const compressed = await compressBuffer(samplePayload, 3, {
+      dictionary: dictionaryBuffer,
+    });
+    const decompressed = await decompressBuffer(compressed, {
+      dictionary: dictionaryBuffer,
+    });
+
+    assert.deepEqual(decompressed, samplePayload);
+  });
+
+  test('should reduce compressed size compared to no dictionary', async () => {
+    const allTrainingFiles = fs
+      .readdirSync(trainingDirectory)
+      .filter((entry) => entry.endsWith('.json'))
+      .map((entry) => path.join(trainingDirectory, entry));
+
+    const dictionaryBuffer = await createDictionary({
+      trainingFiles: allTrainingFiles.slice(0, 100),
+      maxDictSize: 112640,
+    });
+
+    // Build a realistic payload from the same data family used during training.
+    const payloadParts = allTrainingFiles
+      .slice(110, 140)
+      .map((filePath) => fs.readFileSync(filePath, 'utf8'));
+    const payload = Buffer.from(payloadParts.join('\n'));
+
+    const compressedWithoutDictionary = await compressBuffer(payload, 3);
+    const compressedWithDictionary = await compressBuffer(payload, 3, {
+      dictionary: dictionaryBuffer,
+    });
+
+    assert.ok(
+      compressedWithDictionary.length < compressedWithoutDictionary.length,
+      `Expected dictionary compression to be smaller: with dictionary=${compressedWithDictionary.length}, without dictionary=${compressedWithoutDictionary.length}`
+    );
   });
 });
 

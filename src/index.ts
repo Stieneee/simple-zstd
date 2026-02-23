@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { Readable, Duplex, PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { execSync } from 'node:child_process';
+import { execSync, execFile } from 'node:child_process';
 
 import isZst from 'is-zst';
 import { file } from 'tmp-promise';
@@ -15,10 +15,17 @@ import ProcessQueue from './process-queue';
 import BufferWritable from './buffer-writable';
 import ProcessDuplex from './process-duplex';
 import PeekPassThrough from './peek-transform';
-import { ZSTDOpts, PoolOpts } from './types';
+import { ZSTDOpts, PoolOpts, CreateDictionaryOpts } from './types';
 
 // Export types for consumers
-export type { ZSTDOpts, PoolOpts, CompressOpts, DecompressOpts, DictionaryObject } from './types';
+export type {
+  ZSTDOpts,
+  PoolOpts,
+  CompressOpts,
+  DecompressOpts,
+  DictionaryObject,
+  CreateDictionaryOpts,
+} from './types';
 
 // Dictionary cache to avoid recreating temp files for the same dictionary buffer
 // Map: hash -> { path: string, cleanup: () => void, refCount: number }
@@ -283,6 +290,70 @@ export function decompress(opts: ZSTDOpts = {}): Promise<Duplex> {
 export async function decompressBuffer(buffer: Buffer, opts: ZSTDOpts = {}): Promise<Buffer> {
   const d = await CreateDecompressStream(opts);
   return DecompressBuffer(buffer, d);
+}
+
+export async function createDictionary(opts: CreateDictionaryOpts): Promise<Buffer> {
+  if (!Array.isArray(opts.trainingFiles) || opts.trainingFiles.length === 0) {
+    throw new Error('createDictionary requires at least one training file or buffer');
+  }
+
+  const { path: outputPath, cleanup } = await file({ prefix: 'zstd-dict-trained-' });
+  const trainingFileCleanups: Array<() => void | Promise<void>> = [];
+
+  try {
+    const trainingPaths: string[] = [];
+
+    for (const trainingInput of opts.trainingFiles) {
+      if (typeof trainingInput === 'string') {
+        trainingPaths.push(trainingInput);
+        continue;
+      }
+
+      if (Buffer.isBuffer(trainingInput)) {
+        const { path, cleanup: trainingCleanup } = await file({ prefix: 'zstd-dict-training-' });
+        await writeFile(path, trainingInput);
+        trainingPaths.push(path);
+        trainingFileCleanups.push(trainingCleanup);
+        continue;
+      }
+
+      throw new Error('createDictionary trainingFiles entries must be file paths or Buffers');
+    }
+
+    const args = ['--train', ...trainingPaths, '-o', outputPath];
+
+    if (opts.maxDictSize && opts.maxDictSize > 0) {
+      args.push(`--maxdict=${opts.maxDictSize}`);
+    }
+
+    if (opts.zstdOptions?.length) {
+      args.push(...opts.zstdOptions);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      debug(bin, args, opts.spawnOptions);
+      execFile(bin, args, opts.spawnOptions ?? {}, (error, _stdout, stderr) => {
+        if (!error) {
+          resolve();
+          return;
+        }
+
+        const code = typeof error.code === 'number' ? error.code : null;
+        const signal = error.signal ?? null;
+        const stdErrMessage = stderr?.toString().trim();
+        const errorMessage = stdErrMessage
+          ? `zstd dictionary training failed (code: ${code}, signal: ${signal}): ${stdErrMessage}`
+          : `zstd dictionary training failed (code: ${code}, signal: ${signal})`;
+
+        reject(new Error(errorMessage));
+      });
+    });
+
+    return readFile(outputPath);
+  } finally {
+    await cleanup();
+    await Promise.all(trainingFileCleanups.map((trainingCleanup) => Promise.resolve(trainingCleanup())));
+  }
 }
 
 // SimpleZSTD Class

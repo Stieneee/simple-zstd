@@ -1,6 +1,7 @@
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
@@ -505,6 +506,11 @@ describe('Dictionary Caching Tests', () => {
 
 describe('Dictionary Creation Tests', () => {
   const trainingDirectory = path.join(__dirname, 'sample/training-files');
+  const listCreateRunTempDirectories = (): string[] =>
+    fs
+      .readdirSync(os.tmpdir())
+      .filter((entry) => entry.startsWith('zstd-dict-create-run-'))
+      .sort();
 
   test('should create a dictionary buffer from training files', async () => {
     const trainingFiles = fs
@@ -590,6 +596,43 @@ describe('Dictionary Creation Tests', () => {
     assert.ok(
       compressedWithDictionary.length < compressedWithoutDictionary.length,
       `Expected dictionary compression to be smaller: with dictionary=${compressedWithDictionary.length}, without dictionary=${compressedWithoutDictionary.length}`
+    );
+  });
+
+  test('should support mixed training inputs and clean only staged temp files', async () => {
+    const tempDirsBefore = listCreateRunTempDirectories();
+    const directTrainingFile = path.join(trainingDirectory, 'user-0.json');
+    const originalDirectFileContents = fs.readFileSync(directTrainingFile);
+    const pathInputs = fs
+      .readdirSync(trainingDirectory)
+      .filter((entry) => entry.endsWith('.json'))
+      .slice(0, 60)
+      .map((entry) => path.join(trainingDirectory, entry));
+    const bufferInputs = fs
+      .readdirSync(trainingDirectory)
+      .filter((entry) => entry.endsWith('.json'))
+      .slice(60, 90)
+      .map((entry) => fs.readFileSync(path.join(trainingDirectory, entry)));
+
+    const dictionaryBuffer = await createDictionary({
+      trainingFiles: [...pathInputs, ...bufferInputs],
+      maxDictSize: 32768,
+    });
+
+    const tempDirsAfter = listCreateRunTempDirectories();
+
+    assert.ok(Buffer.isBuffer(dictionaryBuffer));
+    assert.ok(dictionaryBuffer.length > 0);
+    assert.ok(fs.existsSync(directTrainingFile), 'Direct training file should not be deleted');
+    assert.deepEqual(
+      fs.readFileSync(directTrainingFile),
+      originalDirectFileContents,
+      'Direct training file should not be modified'
+    );
+    assert.deepEqual(
+      tempDirsAfter,
+      tempDirsBefore,
+      'Per-run temp directory should be cleaned up after dictionary creation'
     );
   });
 });

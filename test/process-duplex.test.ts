@@ -82,6 +82,7 @@ describe('ProcessDuplex isolated behavior', () => {
       ['-dc'],
       { cwd: '/tmp/simple-zstd-test' },
       undefined,
+      undefined,
       spawnProcess
     );
 
@@ -95,7 +96,7 @@ describe('ProcessDuplex isolated behavior', () => {
 
   test('force-kills when initial kill does not close process', async () => {
     const fake = createFakeChildProcess({ closeOnKill: false, closeOnSigkill: true });
-    const stream = new ProcessDuplex('mock-zstd', [], undefined, undefined, () => {
+    const stream = new ProcessDuplex('mock-zstd', [], undefined, undefined, undefined, () => {
       return fake as unknown as ChildProcess;
     });
 
@@ -110,7 +111,7 @@ describe('ProcessDuplex isolated behavior', () => {
 
   test('destroy callback path fires once when process never closes', async () => {
     const fake = createFakeChildProcess({ closeOnKill: false, closeOnSigkill: false });
-    const stream = new ProcessDuplex('mock-zstd', [], undefined, undefined, () => {
+    const stream = new ProcessDuplex('mock-zstd', [], undefined, undefined, undefined, () => {
       return fake as unknown as ChildProcess;
     });
 
@@ -129,7 +130,7 @@ describe('ProcessDuplex isolated behavior', () => {
 
   test('pauses on backpressure and resumes on _read', async () => {
     const fake = createFakeChildProcess();
-    const stream = new ProcessDuplex('mock-zstd', [], undefined, undefined, () => {
+    const stream = new ProcessDuplex('mock-zstd', [], undefined, undefined, undefined, () => {
       return fake as unknown as ChildProcess;
     });
 
@@ -147,6 +148,48 @@ describe('ProcessDuplex isolated behavior', () => {
     stream._read(0);
     assert.ok(fake.stdout.resumeCount > resumeCountBeforeRead);
 
+    stream.destroy();
+    await once(stream, 'close');
+  });
+
+  test('emits error on non-zero exit when policy is enabled', async () => {
+    const fake = createFakeChildProcess();
+    const stream = new ProcessDuplex(
+      'mock-zstd',
+      [],
+      undefined,
+      undefined,
+      { nonZeroExitPolicy: true },
+      () => fake as unknown as ChildProcess
+    );
+
+    const errorPromise = once(stream, 'error') as Promise<[Error]>;
+    fake.emit('close', 2, null);
+    const [err] = await errorPromise;
+
+    assert.match(err.message, /zstd exited non zero\. code: 2 signal: null/);
+  });
+
+  test('does not emit error on non-zero exit when policy is disabled', async () => {
+    const fake = createFakeChildProcess();
+    const stream = new ProcessDuplex(
+      'mock-zstd',
+      [],
+      undefined,
+      undefined,
+      { nonZeroExitPolicy: false },
+      () => fake as unknown as ChildProcess
+    );
+
+    let errored = false;
+    stream.on('error', () => {
+      errored = true;
+    });
+
+    fake.emit('close', 3, null);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(errored, false);
     stream.destroy();
     await once(stream, 'close');
   });

@@ -3,6 +3,13 @@ import { spawn, ChildProcess, SpawnOptions } from 'node:child_process';
 import type { DuplexOptions } from 'node:stream';
 
 type SpawnProcessFn = (command: string, args: string[], options?: SpawnOptions) => ChildProcess;
+type NonZeroExitPolicy =
+  | boolean
+  | ((code: number | null, signal: NodeJS.Signals | null) => boolean);
+
+interface ProcessDuplexOptions {
+  nonZeroExitPolicy?: NonZeroExitPolicy;
+}
 
 export default class ProcessDuplex extends Duplex {
   #process: ChildProcess;
@@ -17,6 +24,7 @@ export default class ProcessDuplex extends Duplex {
     args: string[],
     spawnOptions?: SpawnOptions,
     streamOptions?: DuplexOptions,
+    processDuplexOptions: ProcessDuplexOptions = {},
     spawnProcess: SpawnProcessFn = spawn as unknown as SpawnProcessFn
   ) {
     super(streamOptions);
@@ -53,10 +61,20 @@ export default class ProcessDuplex extends Duplex {
     this.#processCloseHandler = (code: number | null, signal: NodeJS.Signals | null) => {
       this.emit('exit', code, signal);
 
+      const policy = processDuplexOptions.nonZeroExitPolicy;
+      const shouldErrorOnNonZeroExit =
+        typeof policy === 'function' ? policy(code, signal) : policy === true;
+
       // Only end readable side after successful process completion.
       // For non-zero exit, callers listening to "exit" can convert to stream errors.
       if (code === 0 && signal === null && !this.readableEnded) {
         this.push(null);
+      } else if (shouldErrorOnNonZeroExit && !this.destroyed) {
+        setImmediate(() => {
+          if (!this.destroyed) {
+            this.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
+          }
+        });
       }
     };
     this.#process.on('close', this.#processCloseHandler);

@@ -77,14 +77,12 @@ describe('ProcessDuplex isolated behavior', () => {
       return fake as unknown as ChildProcess;
     };
 
-    const stream = new ProcessDuplex(
-      'mock-zstd',
-      ['-dc'],
-      { cwd: '/tmp/simple-zstd-test' },
-      undefined,
-      undefined,
-      spawnProcess
-    );
+    const stream = new ProcessDuplex({
+      command: 'mock-zstd',
+      args: ['-dc'],
+      spawnOptions: { cwd: '/tmp/simple-zstd-test' },
+      spawnProcess,
+    });
 
     assert.equal(calledCommand, 'mock-zstd');
     assert.deepEqual(calledArgs, ['-dc']);
@@ -96,8 +94,12 @@ describe('ProcessDuplex isolated behavior', () => {
 
   test('force-kills when initial kill does not close process', async () => {
     const fake = createFakeChildProcess({ closeOnKill: false, closeOnSigkill: true });
-    const stream = new ProcessDuplex('mock-zstd', [], undefined, undefined, undefined, () => {
-      return fake as unknown as ChildProcess;
+    const stream = new ProcessDuplex({
+      command: 'mock-zstd',
+      args: [],
+      spawnProcess: () => {
+        return fake as unknown as ChildProcess;
+      },
     });
 
     const startedAt = Date.now();
@@ -111,8 +113,12 @@ describe('ProcessDuplex isolated behavior', () => {
 
   test('destroy callback path fires once when process never closes', async () => {
     const fake = createFakeChildProcess({ closeOnKill: false, closeOnSigkill: false });
-    const stream = new ProcessDuplex('mock-zstd', [], undefined, undefined, undefined, () => {
-      return fake as unknown as ChildProcess;
+    const stream = new ProcessDuplex({
+      command: 'mock-zstd',
+      args: [],
+      spawnProcess: () => {
+        return fake as unknown as ChildProcess;
+      },
     });
 
     let closeCount = 0;
@@ -130,8 +136,12 @@ describe('ProcessDuplex isolated behavior', () => {
 
   test('pauses on backpressure and resumes on _read', async () => {
     const fake = createFakeChildProcess();
-    const stream = new ProcessDuplex('mock-zstd', [], undefined, undefined, undefined, () => {
-      return fake as unknown as ChildProcess;
+    const stream = new ProcessDuplex({
+      command: 'mock-zstd',
+      args: [],
+      spawnProcess: () => {
+        return fake as unknown as ChildProcess;
+      },
     });
 
     // Force backpressure path for deterministic testing.
@@ -154,14 +164,12 @@ describe('ProcessDuplex isolated behavior', () => {
 
   test('emits error on non-zero exit when policy is enabled', async () => {
     const fake = createFakeChildProcess();
-    const stream = new ProcessDuplex(
-      'mock-zstd',
-      [],
-      undefined,
-      undefined,
-      { nonZeroExitPolicy: true },
-      () => fake as unknown as ChildProcess
-    );
+    const stream = new ProcessDuplex({
+      command: 'mock-zstd',
+      args: [],
+      nonZeroExitPolicy: true,
+      spawnProcess: () => fake as unknown as ChildProcess,
+    });
 
     const errorPromise = once(stream, 'error') as Promise<[Error]>;
     fake.emit('close', 2, null);
@@ -172,14 +180,12 @@ describe('ProcessDuplex isolated behavior', () => {
 
   test('does not emit error on non-zero exit when policy is disabled', async () => {
     const fake = createFakeChildProcess();
-    const stream = new ProcessDuplex(
-      'mock-zstd',
-      [],
-      undefined,
-      undefined,
-      { nonZeroExitPolicy: false },
-      () => fake as unknown as ChildProcess
-    );
+    const stream = new ProcessDuplex({
+      command: 'mock-zstd',
+      args: [],
+      nonZeroExitPolicy: false,
+      spawnProcess: () => fake as unknown as ChildProcess,
+    });
 
     let errored = false;
     stream.on('error', () => {

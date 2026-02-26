@@ -8,7 +8,12 @@ type NonZeroExitPolicy =
   | ((code: number | null, signal: NodeJS.Signals | null) => boolean);
 
 interface ProcessDuplexOptions {
+  command: string;
+  args: string[];
+  spawnOptions?: SpawnOptions;
+  streamOptions?: DuplexOptions;
   nonZeroExitPolicy?: NonZeroExitPolicy;
+  spawnProcess?: SpawnProcessFn;
 }
 
 export default class ProcessDuplex extends Duplex {
@@ -19,15 +24,11 @@ export default class ProcessDuplex extends Duplex {
   #processCloseHandler?: (code: number | null, signal: NodeJS.Signals | null) => void;
   #processErrorHandler?: (err: Error) => void;
 
-  constructor(
-    command: string,
-    args: string[],
-    spawnOptions?: SpawnOptions,
-    streamOptions?: DuplexOptions,
-    processDuplexOptions: ProcessDuplexOptions = {},
-    spawnProcess: SpawnProcessFn = spawn as unknown as SpawnProcessFn
-  ) {
-    super(streamOptions);
+  constructor(options: ProcessDuplexOptions) {
+    super(options.streamOptions);
+
+    const { command, args, spawnOptions, nonZeroExitPolicy } = options;
+    const spawnProcess = options.spawnProcess ?? (spawn as unknown as SpawnProcessFn);
 
     // Spawn the child process
     this.#process = spawnProcess(command, args, spawnOptions || {});
@@ -61,7 +62,7 @@ export default class ProcessDuplex extends Duplex {
     this.#processCloseHandler = (code: number | null, signal: NodeJS.Signals | null) => {
       this.emit('exit', code, signal);
 
-      const policy = processDuplexOptions.nonZeroExitPolicy;
+      const policy = nonZeroExitPolicy;
       const shouldErrorOnNonZeroExit =
         typeof policy === 'function' ? policy(code, signal) : policy === true;
 

@@ -154,7 +154,11 @@ async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<
 
   try {
     debug(bin, ['-zc', `-${lvl}`, ...zo], opts.spawnOptions, opts.streamOptions);
-    c = new ProcessDuplex(bin, ['-zc', `-${lvl}`, ...zo], opts.spawnOptions, opts.streamOptions, {
+    c = new ProcessDuplex({
+      command: bin,
+      args: ['-zc', `-${lvl}`, ...zo],
+      spawnOptions: opts.spawnOptions,
+      streamOptions: opts.streamOptions,
       nonZeroExitPolicy: true,
     });
   } catch (err) {
@@ -217,7 +221,11 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
 
   try {
     debug(bin, ['-dc', ...zo], opts.spawnOptions, opts.streamOptions);
-    d = new ProcessDuplex(bin, ['-dc', ...zo], opts.spawnOptions, opts.streamOptions, {
+    d = new ProcessDuplex({
+      command: bin,
+      args: ['-dc', ...zo],
+      spawnOptions: opts.spawnOptions,
+      streamOptions: opts.streamOptions,
       nonZeroExitPolicy: () => !terminate,
     });
   } catch (err) {

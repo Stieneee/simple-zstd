@@ -13,10 +13,10 @@
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
-    "test": "node --test --require ts-node/register test/test.ts || true",
-    "test-debug": "DEBUG=SimpleZSTD,SimpleZSTDQueue timeout -t 120s -- node --test --require ts-node/register test/test.ts || true",
-    "test-ci": "node --test --require ts-node/register test/test.ts && exit 0 || exit 1",
-    "coverage": "node --test --experimental-test-coverage --require ts-node/register test/test.ts || true"
+    "test": "node --test --require ts-node/register test/**/*.test.ts || true",
+    "test-debug": "DEBUG=SimpleZSTD,SimpleZSTDQueue timeout -t 120s -- node --test --require ts-node/register test/**/*.test.ts || true",
+    "test-ci": "node --test --require ts-node/register test/**/*.test.ts && exit 0 || exit 1",
+    "coverage": "node --test --experimental-test-coverage --require ts-node/register test/**/*.test.ts || true"
   },
   "repository": {
     "type": "git",

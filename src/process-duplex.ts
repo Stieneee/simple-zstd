@@ -2,6 +2,8 @@ import { Duplex } from 'node:stream';
 import { spawn, ChildProcess, SpawnOptions } from 'node:child_process';
 import type { DuplexOptions } from 'node:stream';
 
+type SpawnProcessFn = (command: string, args: string[], options?: SpawnOptions) => ChildProcess;
+
 export default class ProcessDuplex extends Duplex {
   #process: ChildProcess;
   #stdoutDataHandler?: (chunk: Buffer) => void;
@@ -14,12 +16,13 @@ export default class ProcessDuplex extends Duplex {
     command: string,
     args: string[],
     spawnOptions?: SpawnOptions,
-    streamOptions?: DuplexOptions
+    streamOptions?: DuplexOptions,
+    spawnProcess: SpawnProcessFn = spawn as unknown as SpawnProcessFn
   ) {
     super(streamOptions);
 
     // Spawn the child process
-    this.#process = spawn(command, args, spawnOptions || {});
+    this.#process = spawnProcess(command, args, spawnOptions || {});
 
     // Forward stdout to the readable side of this duplex
     if (this.#process.stdout) {
@@ -124,6 +127,15 @@ export default class ProcessDuplex extends Duplex {
 
     // Kill the child process and wait for it to exit
     if (this.#process && !this.#process.killed) {
+      let callbackCalled = false;
+
+      const finishDestroy = () => {
+        if (callbackCalled) return;
+        callbackCalled = true;
+        this.#process.removeListener('close', onClose);
+        callback(error);
+      };
+
       // Close stdin first so the process receives EOF and can exit cleanly
       if (this.#process.stdin && !this.#process.stdin.destroyed) {
         this.#process.stdin.end();
@@ -132,7 +144,7 @@ export default class ProcessDuplex extends Duplex {
       // Wait for the process to fully exit before calling callback
       const onClose = () => {
         clearTimeout(forceKillTimeout);
-        callback(error);
+        finishDestroy();
       };
 
       // Set up close listener
@@ -143,12 +155,13 @@ export default class ProcessDuplex extends Duplex {
 
       // Force kill if process doesn't exit within 1 second
       const forceKillTimeout = setTimeout(() => {
-        if (!this.#process.killed) {
+        // "killed" only indicates a signal was sent, not that the process exited.
+        if (this.#process.exitCode === null && this.#process.signalCode === null) {
           this.#process.kill('SIGKILL');
         }
-        // Remove the close listener and call callback
-        this.#process.removeListener('close', onClose);
-        callback(error);
+
+        // If close never arrives, still complete destroy after a short grace period.
+        setTimeout(finishDestroy, 100);
       }, 1000);
     } else {
       // Process already killed or doesn't exist

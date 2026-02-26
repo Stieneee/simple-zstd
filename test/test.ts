@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 
@@ -803,5 +804,70 @@ describe('Error Handling and Edge Cases', () => {
     assert.deepEqual(results[0], data1);
     assert.deepEqual(results[1], data2);
     assert.deepEqual(results[2], data3);
+  });
+});
+
+describe('decompressBuffer dictionary error behavior', () => {
+  test('should reject dictionary-compressed input when dictionary is missing', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'simple-zstd-repro-'));
+
+    try {
+      const dictPath = path.join(tempRoot, 'raw-content.dict');
+      fs.writeFileSync(dictPath, 'alpha beta gamma delta');
+      const payload = Buffer.from('alpha beta gamma');
+
+      const compressedResult = spawnSync(
+        'zstd',
+        ['-q', '-c', '-D', dictPath, '-3', '--no-check'],
+        { input: payload }
+      );
+      assert.equal(
+        compressedResult.status,
+        0,
+        `zstd compress failed: ${compressedResult.stderr?.toString() ?? ''}`
+      );
+      const compressed = compressedResult.stdout;
+
+      const baselineDecode = spawnSync('zstd', ['-q', '-d', '-c'], { input: compressed });
+      assert.notEqual(
+        baselineDecode.status,
+        0,
+        'Expected raw zstd CLI decode to fail without dictionary'
+      );
+
+      await assert.rejects(async () => {
+        await decompressBuffer(compressed);
+      });
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('should decode dictionary-compressed input when dictionary is provided', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'simple-zstd-repro-'));
+
+    try {
+      const dictPath = path.join(tempRoot, 'raw-content.dict');
+      fs.writeFileSync(dictPath, 'alpha beta gamma delta');
+      const payload = Buffer.from('alpha beta gamma');
+
+      const compressedResult = spawnSync(
+        'zstd',
+        ['-q', '-c', '-D', dictPath, '-3', '--no-check'],
+        { input: payload }
+      );
+      assert.equal(
+        compressedResult.status,
+        0,
+        `zstd compress failed: ${compressedResult.stderr?.toString() ?? ''}`
+      );
+
+      const decoded = await decompressBuffer(compressedResult.stdout, {
+        dictionary: { path: dictPath },
+      });
+      assert.deepEqual(decoded, payload);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });

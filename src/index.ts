@@ -301,8 +301,55 @@ export function decompress(opts: ZSTDOpts = {}): Promise<Duplex> {
 }
 
 export async function decompressBuffer(buffer: Buffer, opts: ZSTDOpts = {}): Promise<Buffer> {
-  const d = await CreateDecompressStream(opts);
-  return DecompressBuffer(buffer, d);
+  // Preserve "smart decompression" behavior for non-zstd payloads.
+  if (!isZst(buffer)) {
+    return buffer;
+  }
+
+  let zo = opts.zstdOptions || [];
+  let cleanup: () => void = () => null;
+
+  if (opts.dictionary && 'path' in opts.dictionary) {
+    zo = [...zo, '-D', `${opts.dictionary.path}`];
+  } else if (Buffer.isBuffer(opts.dictionary)) {
+    const cachedDictionary = await getCachedDictionaryPath(opts.dictionary);
+    zo = [...zo, '-D', `${cachedDictionary.path}`];
+    cleanup = cachedDictionary.cleanup;
+  }
+
+  const args = ['-dc', ...zo];
+
+  return new Promise((resolve, reject) => {
+    debug(bin, args, opts.spawnOptions);
+    const child = execFile(
+      bin,
+      args,
+      {
+        ...(opts.spawnOptions ?? {}),
+        encoding: 'buffer',
+        maxBuffer: 512 * 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        cleanup();
+
+        if (!error) {
+          resolve(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout));
+          return;
+        }
+
+        const code = typeof error.code === 'number' ? error.code : null;
+        const signal = error.signal ?? null;
+        const stdErrMessage = stderr?.toString().trim();
+        const errorMessage = stdErrMessage
+          ? `zstd decompression failed (code: ${code}, signal: ${signal}): ${stdErrMessage}`
+          : `zstd decompression failed (code: ${code}, signal: ${signal})`;
+
+        reject(new Error(errorMessage));
+      }
+    );
+
+    child.stdin?.end(buffer);
+  });
 }
 
 export async function createDictionary(opts: CreateDictionaryOpts): Promise<Buffer> {

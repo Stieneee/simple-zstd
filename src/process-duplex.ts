@@ -5,11 +5,9 @@ import type { DuplexOptions } from 'node:stream';
 export default class ProcessDuplex extends Duplex {
   #process: ChildProcess;
   #stdoutDataHandler?: (chunk: Buffer) => void;
-  #stdoutEndHandler?: () => void;
   #stdoutErrorHandler?: (err: Error) => void;
-  #stdoutCloseHandler?: () => void;
   #stderrDataHandler?: (chunk: Buffer) => void;
-  #processExitHandler?: (code: number | null, signal: NodeJS.Signals | null) => void;
+  #processCloseHandler?: (code: number | null, signal: NodeJS.Signals | null) => void;
   #processErrorHandler?: (err: Error) => void;
 
   constructor(
@@ -33,22 +31,10 @@ export default class ProcessDuplex extends Duplex {
       };
       this.#process.stdout.on('data', this.#stdoutDataHandler);
 
-      this.#stdoutEndHandler = () => {
-        // Signal end of readable side
-        this.push(null);
-      };
-      this.#process.stdout.on('end', this.#stdoutEndHandler);
-
       this.#stdoutErrorHandler = (err: Error) => {
         this.destroy(err);
       };
       this.#process.stdout.on('error', this.#stdoutErrorHandler);
-
-      this.#stdoutCloseHandler = () => {
-        // Ensure we signal end if not already done
-        this.push(null);
-      };
-      this.#process.stdout.on('close', this.#stdoutCloseHandler);
     }
 
     // Forward stderr errors
@@ -60,11 +46,17 @@ export default class ProcessDuplex extends Duplex {
       this.#process.stderr.on('data', this.#stderrDataHandler);
     }
 
-    // Handle process exit
-    this.#processExitHandler = (code: number | null, signal: NodeJS.Signals | null) => {
+    // Handle process close (after stdio is fully flushed/closed)
+    this.#processCloseHandler = (code: number | null, signal: NodeJS.Signals | null) => {
       this.emit('exit', code, signal);
+
+      // Only end readable side after successful process completion.
+      // For non-zero exit, callers listening to "exit" can convert to stream errors.
+      if (code === 0 && signal === null && !this.readableEnded) {
+        this.push(null);
+      }
     };
-    this.#process.on('exit', this.#processExitHandler);
+    this.#process.on('close', this.#processCloseHandler);
 
     // Handle process errors
     this.#processErrorHandler = (err: Error) => {
@@ -108,24 +100,26 @@ export default class ProcessDuplex extends Duplex {
     if (this.#process.stdout) {
       if (this.#stdoutDataHandler)
         this.#process.stdout.removeListener('data', this.#stdoutDataHandler);
-      if (this.#stdoutEndHandler)
-        this.#process.stdout.removeListener('end', this.#stdoutEndHandler);
       if (this.#stdoutErrorHandler)
         this.#process.stdout.removeListener('error', this.#stdoutErrorHandler);
-      if (this.#stdoutCloseHandler)
-        this.#process.stdout.removeListener('close', this.#stdoutCloseHandler);
     }
 
     if (this.#process.stderr && this.#stderrDataHandler) {
       this.#process.stderr.removeListener('data', this.#stderrDataHandler);
     }
 
-    if (this.#processExitHandler) {
-      this.#process.removeListener('exit', this.#processExitHandler);
+    if (this.#processCloseHandler) {
+      this.#process.removeListener('close', this.#processCloseHandler);
     }
 
     if (this.#processErrorHandler) {
       this.#process.removeListener('error', this.#processErrorHandler);
+    }
+
+    // If the process has already exited, cleanup is complete.
+    if (this.#process.exitCode !== null || this.#process.signalCode !== null) {
+      callback(error);
+      return;
     }
 
     // Kill the child process and wait for it to exit

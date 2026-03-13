@@ -1,12 +1,13 @@
 import fs from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { writeFile, readFile, copyFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { Readable, Duplex, PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { execSync } from 'node:child_process';
+import { execSync, execFile } from 'node:child_process';
 
 import isZst from 'is-zst';
-import { file } from 'tmp-promise';
+import { dir } from 'tmp-promise';
 import Debug from 'debug';
 
 const debug = Debug('SimpleZSTD');
@@ -15,14 +16,32 @@ import ProcessQueue from './process-queue';
 import BufferWritable from './buffer-writable';
 import ProcessDuplex from './process-duplex';
 import PeekPassThrough from './peek-transform';
-import { ZSTDOpts, PoolOpts } from './types';
+import { ZSTDOpts, PoolOpts, CreateDictionaryOpts } from './types';
 
 // Export types for consumers
-export type { ZSTDOpts, PoolOpts, CompressOpts, DecompressOpts, DictionaryObject } from './types';
+export type {
+  ZSTDOpts,
+  PoolOpts,
+  CompressOpts,
+  DecompressOpts,
+  DictionaryObject,
+  CreateDictionaryOpts,
+} from './types';
 
 // Dictionary cache to avoid recreating temp files for the same dictionary buffer
 // Map: hash -> { path: string, cleanup: () => void, refCount: number }
-const dictionaryCache = new Map<string, { path: string; cleanup: () => void; refCount: number }>();
+const dictionaryCache = new Map<string, { path: string; cleanup: () => Promise<void>; refCount: number }>();
+
+async function createTempDirectory(prefix: string): Promise<{
+  directoryPath: string;
+  cleanup: () => Promise<void>;
+}> {
+  const { path: tempDirectory, cleanup } = await dir({ prefix, unsafeCleanup: true });
+  return {
+    directoryPath: tempDirectory,
+    cleanup: () => Promise.resolve(cleanup()),
+  };
+}
 
 function hashBuffer(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');
@@ -51,17 +70,18 @@ async function getCachedDictionaryPath(
   }
 
   debug(`Dictionary cache miss: ${hash.slice(0, 8)}... - creating temp file`);
-  const { path, cleanup: tmpCleanup } = await file({ prefix: 'zstd-dict-' });
-  await writeFile(path, dictionary);
+  const { directoryPath, cleanup: tmpCleanup } = await createTempDirectory('zstd-dict-cache-');
+  const dictionaryPath = path.join(directoryPath, 'dictionary.zstd');
+  await writeFile(dictionaryPath, dictionary);
 
   dictionaryCache.set(hash, {
-    path,
+    path: dictionaryPath,
     cleanup: tmpCleanup,
     refCount: 1,
   });
 
   return {
-    path,
+    path: dictionaryPath,
     cleanup: () => {
       const cached = dictionaryCache.get(hash);
       if (cached) {
@@ -285,20 +305,87 @@ export async function decompressBuffer(buffer: Buffer, opts: ZSTDOpts = {}): Pro
   return DecompressBuffer(buffer, d);
 }
 
+export async function createDictionary(opts: CreateDictionaryOpts): Promise<Buffer> {
+  if (!Array.isArray(opts.trainingFiles) || opts.trainingFiles.length === 0) {
+    throw new Error('createDictionary requires at least one training file or buffer');
+  }
+
+  const { path: tempRunDirectory, cleanup } = await dir({
+    prefix: 'zstd-dict-create-run-',
+    unsafeCleanup: true,
+  });
+
+  try {
+    const trainingPaths: string[] = [];
+    const outputPath = path.join(tempRunDirectory, 'dictionary.zstd');
+
+    for (const [index, trainingInput] of opts.trainingFiles.entries()) {
+      const stagedTrainingPath = path.join(tempRunDirectory, `training-${index}.bin`);
+
+      if (typeof trainingInput === 'string') {
+        await copyFile(trainingInput, stagedTrainingPath);
+        trainingPaths.push(stagedTrainingPath);
+        continue;
+      }
+
+      if (Buffer.isBuffer(trainingInput)) {
+        await writeFile(stagedTrainingPath, trainingInput);
+        trainingPaths.push(stagedTrainingPath);
+        continue;
+      }
+
+      throw new Error('createDictionary trainingFiles entries must be file paths or Buffers');
+    }
+
+    const args = ['--train', ...trainingPaths, '-o', outputPath];
+
+    if (opts.maxDictSize && opts.maxDictSize > 0) {
+      args.push(`--maxdict=${opts.maxDictSize}`);
+    }
+
+    if (opts.zstdOptions?.length) {
+      args.push(...opts.zstdOptions);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      debug(bin, args, opts.spawnOptions);
+      execFile(bin, args, opts.spawnOptions ?? {}, (error, _stdout, stderr) => {
+        if (!error) {
+          resolve();
+          return;
+        }
+
+        const code = typeof error.code === 'number' ? error.code : null;
+        const signal = error.signal ?? null;
+        const stdErrMessage = stderr?.toString().trim();
+        const errorMessage = stdErrMessage
+          ? `zstd dictionary training failed (code: ${code}, signal: ${signal}): ${stdErrMessage}`
+          : `zstd dictionary training failed (code: ${code}, signal: ${signal})`;
+
+        reject(new Error(errorMessage));
+      });
+    });
+
+    return readFile(outputPath);
+  } finally {
+    await cleanup();
+  }
+}
+
 // SimpleZSTD Class
 export class SimpleZSTD {
   #compressQueue!: ProcessQueue<Duplex>;
   #decompressQueue!: ProcessQueue<Duplex>;
-  #compressDictCleanup: () => void = () => null;
-  #decompressDictCleanup: () => void = () => null;
+  #compressDictCleanup: () => Promise<void> = async () => undefined;
+  #decompressDictCleanup: () => Promise<void> = async () => undefined;
   #ready;
   #poolOptions?: PoolOpts;
 
   private constructor(poolOptions?: PoolOpts) {
     debug('constructor', poolOptions);
     this.#poolOptions = poolOptions;
-    this.#compressDictCleanup = () => null;
-    this.#decompressDictCleanup = () => null;
+    this.#compressDictCleanup = async () => undefined;
+    this.#decompressDictCleanup = async () => undefined;
 
     this.#ready = new Promise((resolve, reject) => {
       (async () => {
@@ -309,10 +396,11 @@ export class SimpleZSTD {
           if (compressDict && 'path' in compressDict) {
             compressDictPath = compressDict.path;
           } else if (compressDict && Buffer.isBuffer(compressDict)) {
-            const { path, cleanup } = await file({ prefix: 'zstd-dict-' });
+            const { directoryPath, cleanup } = await createTempDirectory('zstd-dict-pool-compress-');
+            const dictionaryPath = path.join(directoryPath, 'dictionary.zstd');
             this.#compressDictCleanup = cleanup;
-            await writeFile(path, compressDict);
-            compressDictPath = path;
+            await writeFile(dictionaryPath, compressDict);
+            compressDictPath = dictionaryPath;
           }
 
           // Handle decompress queue dictionary
@@ -321,10 +409,11 @@ export class SimpleZSTD {
           if (decompressDict && 'path' in decompressDict) {
             decompressDictPath = decompressDict.path;
           } else if (decompressDict && Buffer.isBuffer(decompressDict)) {
-            const { path, cleanup } = await file({ prefix: 'zstd-dict-' });
+            const { directoryPath, cleanup } = await createTempDirectory('zstd-dict-pool-decompress-');
+            const dictionaryPath = path.join(directoryPath, 'dictionary.zstd');
             this.#decompressDictCleanup = cleanup;
-            await writeFile(path, decompressDict);
-            decompressDictPath = path;
+            await writeFile(dictionaryPath, decompressDict);
+            decompressDictPath = dictionaryPath;
           }
 
           this.#compressQueue = new ProcessQueue(
@@ -381,10 +470,10 @@ export class SimpleZSTD {
       })();
     }).catch((err) => {
       debug('ready error', err);
-      this.#compressDictCleanup();
-      this.#decompressDictCleanup();
-      this.#compressDictCleanup = () => null;
-      this.#decompressDictCleanup = () => null;
+      void this.#compressDictCleanup();
+      void this.#decompressDictCleanup();
+      this.#compressDictCleanup = async () => undefined;
+      this.#decompressDictCleanup = async () => undefined;
     });
   }
 
@@ -414,10 +503,10 @@ export class SimpleZSTD {
 
   async destroy() {
     await Promise.all([this.#compressQueue.destroy(), this.#decompressQueue.destroy()]);
-    this.#compressDictCleanup();
-    this.#decompressDictCleanup();
-    this.#compressDictCleanup = () => null;
-    this.#decompressDictCleanup = () => null;
+    await this.#compressDictCleanup();
+    await this.#decompressDictCleanup();
+    this.#compressDictCleanup = async () => undefined;
+    this.#decompressDictCleanup = async () => undefined;
   }
 
   /**

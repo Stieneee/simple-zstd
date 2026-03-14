@@ -2,6 +2,12 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version bump type (patch, minor, major) or explicit version (e.g. 2.1.0)'
+        required: true
+        default: 'patch'
+        type: string
 
 permissions:
   contents: write
@@ -40,6 +46,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Run release-it
-        run: npx release-it
+        run: npx release-it ${{ inputs.version }} --ci
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

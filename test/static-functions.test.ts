@@ -3,7 +3,13 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 
-import { compress, decompress, compressBuffer, decompressBuffer, clearDictionaryCache } from '../src/index';
+import {
+  compress,
+  decompress,
+  compressBuffer,
+  decompressBuffer,
+  clearDictionaryCache,
+} from '../src/index';
 import {
   createThrottle,
   assertFileEqual,

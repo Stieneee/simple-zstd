@@ -32,7 +32,10 @@ type FakeChildProcess = EventEmitter & {
   kill: (signal?: NodeJS.Signals) => boolean;
 };
 
-function createFakeChildProcess(opts?: { closeOnKill?: boolean; closeOnSigkill?: boolean }): FakeChildProcess {
+function createFakeChildProcess(opts?: {
+  closeOnKill?: boolean;
+  closeOnSigkill?: boolean;
+}): FakeChildProcess {
   const closeOnKill = opts?.closeOnKill ?? true;
   const closeOnSigkill = opts?.closeOnSigkill ?? true;
 
@@ -146,7 +149,9 @@ describe('ProcessDuplex isolated behavior', () => {
 
     // Force backpressure path for deterministic testing.
     const originalPush = stream.push.bind(stream);
-    (stream as unknown as { push: (chunk: Buffer | null) => boolean }).push = (chunk: Buffer | null) => {
+    (stream as unknown as { push: (chunk: Buffer | null) => boolean }).push = (
+      chunk: Buffer | null
+    ) => {
       if (chunk !== null) return false;
       return originalPush(chunk);
     };

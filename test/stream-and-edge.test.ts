@@ -88,9 +88,15 @@ describe('Error Handling and Edge Cases', () => {
     const data3 = Buffer.from('test data 3');
 
     const results = await Promise.all([
-      compressBuffer(data1, 3, { dictionary: dict }).then((c) => decompressBuffer(c, { dictionary: dict })),
-      compressBuffer(data2, 3, { dictionary: dict }).then((c) => decompressBuffer(c, { dictionary: dict })),
-      compressBuffer(data3, 3, { dictionary: dict }).then((c) => decompressBuffer(c, { dictionary: dict })),
+      compressBuffer(data1, 3, { dictionary: dict }).then((c) =>
+        decompressBuffer(c, { dictionary: dict })
+      ),
+      compressBuffer(data2, 3, { dictionary: dict }).then((c) =>
+        decompressBuffer(c, { dictionary: dict })
+      ),
+      compressBuffer(data3, 3, { dictionary: dict }).then((c) =>
+        decompressBuffer(c, { dictionary: dict })
+      ),
     ]);
 
     assert.deepEqual(results[0], data1);

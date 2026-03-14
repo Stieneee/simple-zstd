@@ -30,7 +30,10 @@ export type {
 
 // Dictionary cache to avoid recreating temp files for the same dictionary buffer
 // Map: hash -> { path: string, cleanup: () => void, refCount: number }
-const dictionaryCache = new Map<string, { path: string; cleanup: () => Promise<void>; refCount: number }>();
+const dictionaryCache = new Map<
+  string,
+  { path: string; cleanup: () => Promise<void>; refCount: number }
+>();
 
 async function createTempDirectory(prefix: string): Promise<{
   directoryPath: string;
@@ -445,7 +448,9 @@ export class SimpleZSTD {
           if (compressDict && 'path' in compressDict) {
             compressDictPath = compressDict.path;
           } else if (compressDict && Buffer.isBuffer(compressDict)) {
-            const { directoryPath, cleanup } = await createTempDirectory('zstd-dict-pool-compress-');
+            const { directoryPath, cleanup } = await createTempDirectory(
+              'zstd-dict-pool-compress-'
+            );
             const dictionaryPath = path.join(directoryPath, 'dictionary.zstd');
             this.#compressDictCleanup = cleanup;
             await writeFile(dictionaryPath, compressDict);
@@ -458,7 +463,9 @@ export class SimpleZSTD {
           if (decompressDict && 'path' in decompressDict) {
             decompressDictPath = decompressDict.path;
           } else if (decompressDict && Buffer.isBuffer(decompressDict)) {
-            const { directoryPath, cleanup } = await createTempDirectory('zstd-dict-pool-decompress-');
+            const { directoryPath, cleanup } = await createTempDirectory(
+              'zstd-dict-pool-decompress-'
+            );
             const dictionaryPath = path.join(directoryPath, 'dictionary.zstd');
             this.#decompressDictCleanup = cleanup;
             await writeFile(dictionaryPath, decompressDict);

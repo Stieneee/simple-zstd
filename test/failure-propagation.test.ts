@@ -7,7 +7,13 @@ import { spawnSync } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
 import { Readable, Writable } from 'node:stream';
 
-import { compress, decompress, compressBuffer, decompressBuffer, clearDictionaryCache } from '../src/index';
+import {
+  compress,
+  decompress,
+  compressBuffer,
+  decompressBuffer,
+  clearDictionaryCache,
+} from '../src/index';
 
 describe('decompressBuffer dictionary error behavior', () => {
   test('should reject dictionary-compressed input when dictionary is missing', async () => {
@@ -18,11 +24,9 @@ describe('decompressBuffer dictionary error behavior', () => {
       fs.writeFileSync(dictPath, 'alpha beta gamma delta');
       const payload = Buffer.from('alpha beta gamma');
 
-      const compressedResult = spawnSync(
-        'zstd',
-        ['-q', '-c', '-D', dictPath, '-3', '--no-check'],
-        { input: payload }
-      );
+      const compressedResult = spawnSync('zstd', ['-q', '-c', '-D', dictPath, '-3', '--no-check'], {
+        input: payload,
+      });
       assert.equal(
         compressedResult.status,
         0,
@@ -53,11 +57,9 @@ describe('decompressBuffer dictionary error behavior', () => {
       fs.writeFileSync(dictPath, 'alpha beta gamma delta');
       const payload = Buffer.from('alpha beta gamma');
 
-      const compressedResult = spawnSync(
-        'zstd',
-        ['-q', '-c', '-D', dictPath, '-3', '--no-check'],
-        { input: payload }
-      );
+      const compressedResult = spawnSync('zstd', ['-q', '-c', '-D', dictPath, '-3', '--no-check'], {
+        input: payload,
+      });
       assert.equal(
         compressedResult.status,
         0,
@@ -131,11 +133,9 @@ describe('Failure propagation tests', () => {
       fs.writeFileSync(dictPath, 'alpha beta gamma delta');
       const payload = Buffer.from('alpha beta gamma');
 
-      const compressedResult = spawnSync(
-        'zstd',
-        ['-q', '-c', '-D', dictPath, '-3', '--no-check'],
-        { input: payload }
-      );
+      const compressedResult = spawnSync('zstd', ['-q', '-c', '-D', dictPath, '-3', '--no-check'], {
+        input: payload,
+      });
       assert.equal(
         compressedResult.status,
         0,

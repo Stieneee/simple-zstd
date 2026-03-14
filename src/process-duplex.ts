@@ -38,9 +38,20 @@ export default class ProcessDuplex extends Duplex {
   }
 
   #setupProcessHandlers() {
+    this.#attachStdinHandler();
     this.#attachStdoutHandler();
     this.#attachStderrHandler();
     this.#attachLifecycleHandlers();
+  }
+
+  #attachStdinHandler() {
+    if (this.#process.stdin) {
+      this.#process.stdin.on('error', (err: Error) => {
+        if (!this.destroyed) {
+          this.destroy(err);
+        }
+      });
+    }
   }
 
   #attachStdoutHandler() {

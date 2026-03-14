@@ -138,7 +138,6 @@ try {
 async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<Duplex> {
   let lvl = compLevel;
   let zo = opts.zstdOptions || [];
-  let path: string | null = null;
   let cleanup: () => void = () => null;
 
   if (!lvl) lvl = 3;
@@ -149,8 +148,9 @@ async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<
     zo = [...zo, '-D', `${opts.dictionary.path}`];
   } else if (Buffer.isBuffer(opts.dictionary)) {
     // Use cached dictionary to avoid recreating temp files
-    ({ path, cleanup } = await getCachedDictionaryPath(opts.dictionary));
-    zo = [...zo, '-D', `${path}`];
+    const cached = await getCachedDictionaryPath(opts.dictionary);
+    cleanup = cached.cleanup;
+    zo = [...zo, '-D', cached.path];
   }
 
   let c: Duplex;
@@ -207,7 +207,6 @@ function CompressBuffer(buffer: Buffer, c: Duplex): Promise<Buffer> {
 async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
   // Dictionary
   let zo = opts.zstdOptions || [];
-  let path: string | null = null;
   let cleanup: () => void = () => null;
 
   let terminate = false;
@@ -216,8 +215,9 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
     zo = [...zo, '-D', `${opts.dictionary.path}`];
   } else if (Buffer.isBuffer(opts.dictionary)) {
     // Use cached dictionary to avoid recreating temp files
-    ({ path, cleanup } = await getCachedDictionaryPath(opts.dictionary));
-    zo = [...zo, '-D', `${path}`];
+    const cached = await getCachedDictionaryPath(opts.dictionary);
+    cleanup = cached.cleanup;
+    zo = [...zo, '-D', cached.path];
   }
 
   let d: Duplex;

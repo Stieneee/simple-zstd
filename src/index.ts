@@ -154,7 +154,13 @@ async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<
 
   try {
     debug(bin, ['-zc', `-${lvl}`, ...zo], opts.spawnOptions, opts.streamOptions);
-    c = new ProcessDuplex(bin, ['-zc', `-${lvl}`, ...zo], opts.spawnOptions, opts.streamOptions);
+    c = new ProcessDuplex({
+      command: bin,
+      args: ['-zc', `-${lvl}`, ...zo],
+      spawnOptions: opts.spawnOptions,
+      streamOptions: opts.streamOptions,
+      nonZeroExitPolicy: true,
+    });
   } catch (err) {
     // cleanup if error;
     cleanup();
@@ -163,11 +169,6 @@ async function CreateCompressStream(compLevel: number, opts: ZSTDOpts): Promise<
 
   c.on('exit', (code: number, signal) => {
     debug('c exit', code, signal);
-    if (code !== 0) {
-      setImmediate(() => {
-        c.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
-      });
-    }
     cleanup();
   });
 
@@ -220,7 +221,13 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
 
   try {
     debug(bin, ['-dc', ...zo], opts.spawnOptions, opts.streamOptions);
-    d = new ProcessDuplex(bin, ['-dc', ...zo], opts.spawnOptions, opts.streamOptions);
+    d = new ProcessDuplex({
+      command: bin,
+      args: ['-dc', ...zo],
+      spawnOptions: opts.spawnOptions,
+      streamOptions: opts.streamOptions,
+      nonZeroExitPolicy: () => !terminate,
+    });
   } catch (err) {
     // cleanup if error
     cleanup();
@@ -229,11 +236,6 @@ async function CreateDecompressStream(opts: ZSTDOpts): Promise<Duplex> {
 
   d.on('exit', (code: number, signal) => {
     debug('d exit', code, signal);
-    if (code !== 0 && !terminate) {
-      setImmediate(() => {
-        d.destroy(new Error(`zstd exited non zero. code: ${code} signal: ${signal}`));
-      });
-    }
     cleanup();
   });
 

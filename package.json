@@ -1,6 +1,6 @@
 {
   "name": "simple-zstd",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Node.js interface to the system installed zstd.",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",

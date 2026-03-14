@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.1.0](https://github.com/Stieneee/simple-zstd/compare/v2.0.0...v2.1.0) (2026-03-14)
+
+### Bug Fixes
+
+* handle stdin EPIPE errors in ProcessDuplex ([250d16d](https://github.com/Stieneee/simple-zstd/commit/250d16d3b8a81c9b1b295064cc5dae82423defeb))
+
 ## [2.0.0](https://github.com/Stieneee/simple-zstd/compare/1.4.2...v2.0.0) (2025-11-12)
 
 ### ⚠ BREAKING CHANGES
